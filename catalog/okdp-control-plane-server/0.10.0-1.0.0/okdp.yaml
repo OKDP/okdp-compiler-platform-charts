@@ -1,0 +1,398 @@
+# OKDP's part of okdp-control-plane-server. The server has no upstream chart
+# (no dependency in Chart.yaml, no values file): its ConfigMap, Deployment,
+# Service, ServiceAccount, ClusterRole, the engine's Role, their bindings and
+# the ValidatingAdmissionPolicy of its namespaces are OKDP's own objects,
+# written whole in objects below. They follow chart/ of the
+# okdp-control-plane-server repository (the environment of
+# internal/config/config.go) and read global.okdp.
+#
+# No required platform value: ingress.suffix is needed only when consoleHost
+# is empty, the errors section checks it.
+
+roles: [okdp-server]
+dependsOn: [ingress]
+
+vars:
+  fullname: ${{ okdpFullname() }}
+  # The upstream half of the package version (<upstream>-<okdp semver>), the
+  # image tag when imageTag is empty.
+  appVersion: >-
+    ${{ cel.bind(i, service.version.lastIndexOf('-'), i > 0 ? service.version.substring(0, i) : service.version) }}
+  # Console host: consoleHost, else okdp-ui.<ingress suffix>.
+  consoleHost: ${{ first([values.consoleHost, 'okdp-ui.' + global.okdp.?ingress.?suffix.orValue('')]) }}
+  # Where the pod mounts the Git credentials and keeps its clone (a cache).
+  credentialsDir: /etc/okdp/gitops-credentials
+  cloneDir: /var/cache/okdp/gitops
+  # The topology of the deployments repositories (GITOPS_CONFIG), required
+  # (the schema): the platform's, the projects' and the output's, mounted
+  # from the ConfigMap <release>-gitops; forgejo.tokenFile is the token of
+  # gitops.forgejoTokenSecret, mounted beside it.
+  topology: ${{ values.gitops.topology }}
+  topologyDir: /etc/okdp/gitops
+  forgejoTokenDir: /etc/okdp/forgejo
+  topologyData:
+    forgejo:
+      $if: ${{ 'forgejo' in topology }}
+      tokenFile: ${{ forgejoTokenDir }}/token
+    $merge: ${{ topology }}
+  chartCacheDir: ${{ values.gitops.?chartCacheDir.orValue('') }}
+  # Keycloak Admin API service account (user and group management).
+  kc: ${{ values.keycloak.credentialsSecret }}
+  # The server's ServiceAccount, the user name the API server gives it (the
+  # ValidatingAdmissionPolicy matches it): platform.yaml names it in
+  # global.okdp.controlPlane.serviceAccount.
+  serviceAccountUser: system:serviceaccount:${{ release.namespace }}:${{ fullname }}
+  # The namespace of the engine's objects the server reads, and those objects.
+  argocd: ${{ values.gitops.engine == 'argocd' }}
+  engineNamespace: >-
+    ${{ argocd ? str(values.gitops.argocdNamespace) : str(values.gitops.releasesNamespace) }}
+  # The CA bundle every TLS client of the server trusts beside the system's
+  # (OIDC, Keycloak, Trino, the SQL editor, Forgejo, Git): tls.caBundleSecret,
+  # else the platform's, global.okdp.tls.caBundleSecret; "": none.
+  caBundle: ${{ first([values.?tls.?caBundleSecret.orValue(''), global.okdp.?tls.?caBundleSecret.orValue('')]) }}
+  caBundleKey: ${{ first([values.?tls.?caBundleKey.orValue(''), 'ca.crt']) }}
+  caDir: /etc/okdp/ca
+  # The list parameters, [] when unset.
+  insecureHTTPHosts: "${{ cel.bind(l, values.gitops.?insecureHTTPHosts.orValue([]), type(l) == list ? l : []) }}"
+  allowedServers: "${{ cel.bind(l, values.?secretStores.?allowedServers.orValue([]), type(l) == list ? l : []) }}"
+  allowedNetworks: "${{ cel.bind(l, values.?sqlEditor.?allowedNetworks.orValue([]), type(l) == list ? l : []) }}"
+  sql: ${{ values.sqlEditor }}
+  # Environment of the server (okdp-control-plane-server
+  # internal/config/config.go): the ConfigMap data, in order.
+  config:
+    - {name: PORT, value: "8093"}
+    - {name: PLATFORM_NAMESPACE, value: "${{ release.namespace }}"}
+    - {name: ALLOWED_ORIGINS, value: "https://${{ consoleHost }}"}
+    - {name: LOG_LEVEL, value: "${{ str(values.logLevel) }}"}
+    # The claim of the caller's groups, which every permission is read with.
+    - {name: OIDC_GROUPS_CLAIM, value: "${{ str(first([values.?oidc.?groupsClaim.orValue(''), 'groups'])) }}"}
+    # Where the platform, the projects and the output live: the server has
+    # no single-repository mode (GITOPS_REPO_URL, GITOPS_BRANCH and
+    # GITOPS_PATH are gone, GITOPS_REPO_URL refused at its start).
+    - {name: GITOPS_CONFIG, value: "${{ topologyDir }}/topology.yaml"}
+    - {$if: "${{ chartCacheDir }}", name: GITOPS_CHART_CACHE_DIR, value: "${{ chartCacheDir }}"}
+    - {name: GITOPS_ENGINE, value: "${{ str(values.gitops.engine) }}"}
+    - {name: GITOPS_RELEASES_NAMESPACE, value: "${{ str(values.gitops.releasesNamespace) }}"}
+    - {name: ARGOCD_NAMESPACE, value: "${{ str(values.gitops.argocdNamespace) }}"}
+    - {name: GITOPS_AUTHOR_NAME, value: "${{ str(values.gitops.author.name) }}"}
+    - {name: GITOPS_AUTHOR_EMAIL, value: "${{ str(values.gitops.author.email) }}"}
+    - {name: GITOPS_CREDENTIALS_DIR, value: "${{ credentialsDir }}"}
+    - {name: GITOPS_CLONE_DIR, value: "${{ cloneDir }}"}
+    # Sandboxes only: any SSH host key is accepted.
+    - {$if: "${{ values.gitops.sshInsecureIgnoreHostKey }}", name: GITOPS_SSH_INSECURE_IGNORE_HOST_KEY, value: "true"}
+    # The hosts a credential goes to over http://, in clear.
+    - {$if: "${{ size(insecureHTTPHosts) > 0 }}", name: GITOPS_INSECURE_HTTP_HOSTS, value: "${{ insecureHTTPHosts.join(',') }}"}
+    # Development sandboxes only: registry hosts reached over plain HTTP.
+    - {$if: "${{ values.insecureOciRegistries }}", name: INSECURE_OCI_REGISTRIES, value: "${{ str(values.insecureOciRegistries) }}"}
+    - {$if: "${{ values.keycloak.url }}", name: KEYCLOAK_URL, value: "${{ str(values.keycloak.url) }}"}
+    - {$if: "${{ values.keycloak.realm }}", name: KEYCLOAK_REALM, value: "${{ str(values.keycloak.realm) }}"}
+    # Sandboxes only: the Keycloak certificate is not checked.
+    - {$if: "${{ values.keycloak.tlsInsecure }}", name: KEYCLOAK_TLS_INSECURE, value: "true"}
+    # The Vault servers a SecretStore may name beside the platform's.
+    - {$if: "${{ size(allowedServers) > 0 }}", name: SECRET_STORE_ALLOWED_SERVERS, value: "${{ allowedServers.join(',') }}"}
+    # The SQL editor and the connection tests.
+    - {name: SQL_STATEMENT_TIMEOUT, value: "${{ str(sql.statementTimeout) }}"}
+    - {name: SQL_DEFAULT_ROWS, value: "${{ string(int(sql.defaultRows)) }}"}
+    - {name: SQL_MAX_ROWS, value: "${{ string(int(sql.maxRows)) }}"}
+    - {name: SQL_MAX_RESULT_BYTES, value: "${{ string(int(sql.maxResultBytes)) }}"}
+    - {name: SQL_MAX_CONCURRENT_PER_USER, value: "${{ string(int(sql.maxConcurrentPerUser)) }}"}
+    - {$if: "${{ sql.tokenExchangeAudience != '' }}", name: SQL_TOKEN_EXCHANGE_AUDIENCE, value: "${{ sql.tokenExchangeAudience }}"}
+    - {$if: "${{ size(allowedNetworks) > 0 }}", name: SQL_ALLOWED_NETWORKS, value: "${{ allowedNetworks.join(',') }}"}
+    # The CA bundle (caBundle), mounted at /etc/okdp/ca.
+    - {$if: "${{ caBundle != '' }}", name: OKDP_CA_FILE, value: "${{ caDir }}/${{ caBundleKey }}"}
+
+  # The pod of the server, handed to okdpPodSpec (the compiler's hardened pod:
+  # non-root, seccomp RuntimeDefault, no privilege escalation, every capability
+  # dropped, a read-only root filesystem, a ServiceAccount token only when
+  # asked).
+  podSpec:
+    serviceAccountName: ${{ fullname }}
+    # The server calls the Kubernetes API (namespaces, the engine's objects,
+    # the projects' pods, Secrets and volumes): its token is mounted.
+    automountServiceAccountToken: true
+    # The image runs as 65534:65534 (nobody). The Secret volumes below
+    # are group-owned by fsGroup, so the server can read them.
+    runAsUser: 65534
+    runAsGroup: 65534
+    fsGroup: 65534
+    containers:
+      - name: server
+        image: "${{ values.imageRepository }}:${{ first([values.imageTag, appVersion]) }}"
+        imagePullPolicy: IfNotPresent
+        # Pod Security "restricted" (okdpPodSpec): the root filesystem is
+        # read-only, the server writes only its clone (gitops-clone), its
+        # chart cache (chart-cache) and HOME=/tmp (tmp).
+        envFrom:
+          - configMapRef:
+              name: ${{ fullname }}
+        env:
+          $if: ${{ first([kc.?name.orValue('')]) != '' || size(platform.proxyEnv) > 0 }}
+          $value:
+            # Keycloak Admin API service account (user and group management).
+            - $if: ${{ kc.?name.orValue(null) }}
+              name: KEYCLOAK_CLIENT_ID
+              valueFrom:
+                secretKeyRef: {name: "${{ str(kc.name) }}", key: "${{ str(first([kc.?clientIdKey.orValue(''), 'client_id'])) }}"}
+            - $if: ${{ kc.?name.orValue(null) }}
+              name: KEYCLOAK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef: {name: "${{ str(kc.name) }}", key: "${{ str(first([kc.?clientSecretKey.orValue(''), 'client_secret'])) }}"}
+            # The platform proxy, upper and lower case.
+            - $for: "k in ['HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY'].filter(p, p in platform.proxyEnv)"
+              $each:
+                - {name: "${{ k }}", value: "${{ str(platform.proxyEnv[k]) }}"}
+                - {name: "${{ k.lowerAscii() }}", value: "${{ str(platform.proxyEnv[k]) }}"}
+        ports:
+          - name: http
+            containerPort: 8093
+            protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+        volumeMounts:
+          # The local clone of the deployments repositories: a cache
+          # only, Git is the store.
+          - name: gitops-clone
+            mountPath: ${{ cloneDir }}
+          # The upstream charts the compiled values are checked against
+          # (GITOPS_CHART_CACHE_DIR): a cache too.
+          - $if: ${{ chartCacheDir }}
+            name: chart-cache
+            mountPath: ${{ chartCacheDir }}
+          # HOME of the image (Git and registry clients).
+          - name: tmp
+            mountPath: /tmp
+          - $if: ${{ values.gitops.credentialsSecret }}
+            name: gitops-credentials
+            mountPath: ${{ credentialsDir }}
+            readOnly: true
+          - name: gitops-topology
+            mountPath: ${{ topologyDir }}
+            readOnly: true
+          - $if: ${{ values.gitops.forgejoTokenSecret }}
+            name: forgejo-token
+            mountPath: ${{ forgejoTokenDir }}
+            readOnly: true
+          # The CA bundle the server's TLS clients trust (OKDP_CA_FILE).
+          - $if: ${{ caBundle != '' }}
+            name: ca-bundle
+            mountPath: ${{ caDir }}
+            readOnly: true
+        resources:
+          $if: ${{ values.?resources.orValue(null) }}
+          $value: ${{ values.resources }}
+    volumes:
+      - name: gitops-clone
+        emptyDir: {}
+      - $if: ${{ chartCacheDir }}
+        name: chart-cache
+        emptyDir: {}
+      - name: tmp
+        emptyDir: {}
+      - $if: ${{ values.gitops.credentialsSecret }}
+        name: gitops-credentials
+        secret:
+          secretName: ${{ values.gitops.credentialsSecret }}
+          # Octal 0440: read by the group fsGroup (rendered as 288).
+          defaultMode: 0440
+      - name: gitops-topology
+        configMap:
+          name: ${{ okdpFullname('gitops') }}
+      - $if: ${{ values.gitops.forgejoTokenSecret }}
+        name: forgejo-token
+        secret:
+          secretName: ${{ values.gitops.forgejoTokenSecret }}
+          items:
+            - {key: token, path: token}
+          defaultMode: 0440
+      - $if: ${{ caBundle != '' }}
+        name: ca-bundle
+        secret:
+          secretName: ${{ caBundle }}
+          items:
+            - {key: "${{ caBundleKey }}", path: "${{ caBundleKey }}"}
+
+errors:
+  - $if: ${{ 'forgejo' in topology && first([values.gitops.?forgejoTokenSecret.orValue('')]) == '' }}
+    $value: "okdp-control-plane-server: gitops.topology.forgejo needs gitops.forgejoTokenSecret, the Secret of the release namespace holding the Forgejo API token (key token)"
+  # The default console host needs the platform ingress suffix.
+  - $if: ${{ first([values.consoleHost]) == '' && global.okdp.?ingress.?suffix.orValue('') == '' }}
+    $value: "okdp-control-plane-server: global.okdp.ingress.suffix is required when consoleHost is empty. It is a platform value: set it in platform.yaml."
+
+# The whole server, rendered by the umbrella (okdp.objects.yaml).
+objects:
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: ${{ fullname }}
+      labels: ${{ labels }}
+    data:
+      $for: e in config
+      $key: ${{ e.name }}
+      $value: ${{ e.value }}
+  # The topology file the server reads (GITOPS_CONFIG).
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: ${{ okdpFullname('gitops') }}
+      labels: ${{ labels }}
+    data:
+      topology.yaml: ${{ toYaml(topologyData) + '\n' }}
+  - apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: ${{ fullname }}
+      labels: ${{ labels }}
+    spec:
+      # One replica: Git writes are serialised in-process.
+      replicas: 1
+      selector:
+        matchLabels: ${{ selectorLabels }}
+      template:
+        metadata:
+          annotations:
+            # The server reads its environment and the topology at start only.
+            checksum/config: "${{ sha256(toJson({'env': config, 'topology': topologyData})) }}"
+          labels: ${{ labels }}
+        spec: ${{ okdpPodSpec(podSpec) }}
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      # The console's ingress routes /api here (okdp-control-plane-ui backendService).
+      name: ${{ fullname }}
+      labels: ${{ labels }}
+    spec:
+      type: ClusterIP
+      ports:
+        - name: http
+          port: 8093
+          targetPort: http
+          protocol: TCP
+      selector: ${{ selectorLabels }}
+  - apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: ${{ fullname }}
+      labels: ${{ labels }}
+  # The server's rights outside the projects' namespaces only (follows
+  # okdp-control-plane-server chart/templates/rbac.yaml). In each project's
+  # namespace its rights are the compiled output's: okdp-compiler writes
+  # there, when platform.yaml sets global.okdp.controlPlane.serviceAccount
+  # to this ServiceAccount, the Role okdp-control-plane (Secrets by name,
+  # never listed; pods, their logs and metrics; events; volumes;
+  # SecretStores, ExternalSecrets, SparkApplications) and its RoleBinding.
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRole
+    metadata:
+      name: ${{ fullname }}
+      labels: ${{ labels }}
+    rules:
+      # The Namespace of a project the console creates, and deletes: only one
+      # labelled okdp.io/project with its name (the ValidatingAdmissionPolicy
+      # below, rbac.namespacePolicy).
+      - apiGroups: [""]
+        resources: ["namespaces"]
+        verbs: ["get", "create", "delete"]
+      # The SparkApplication form reads the operator's CRD schema, that CRD only.
+      - apiGroups: ["apiextensions.k8s.io"]
+        resources: ["customresourcedefinitions"]
+        resourceNames: ["sparkapplications.sparkoperator.k8s.io"]
+        verbs: ["get"]
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    metadata:
+      name: ${{ fullname }}
+      labels: ${{ labels }}
+    subjects:
+      - kind: ServiceAccount
+        name: ${{ fullname }}
+        namespace: ${{ release.namespace }}
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: ${{ fullname }}
+  # The GitOps engine's objects, read only, in the engine's namespace: the
+  # render/sync status of each release. The server never writes them.
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata:
+      name: ${{ okdpFullname('engine') }}
+      namespace: ${{ engineNamespace }}
+      labels: ${{ labels }}
+    rules:
+      - apiGroups: ["${{ argocd ? 'argoproj.io' : 'helm.toolkit.fluxcd.io' }}"]
+        resources: ["${{ argocd ? 'applications' : 'helmreleases' }}"]
+        verbs: ["get", "list", "watch"]
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      name: ${{ okdpFullname('engine') }}
+      namespace: ${{ engineNamespace }}
+      labels: ${{ labels }}
+    subjects:
+      - kind: ServiceAccount
+        name: ${{ fullname }}
+        namespace: ${{ release.namespace }}
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: Role
+      name: ${{ okdpFullname('engine') }}
+  # The server's ServiceAccount creates a Namespace only labelled
+  # okdp.io/project with its own name and a Pod Security level that is not
+  # privileged, and deletes only a Namespace so labelled: never kube-system,
+  # a platform namespace or anyone else's, whatever its ClusterRole allows.
+  - $if: ${{ values.rbac.namespacePolicy }}
+    apiVersion: admissionregistration.k8s.io/v1
+    kind: ValidatingAdmissionPolicy
+    metadata:
+      name: ${{ okdpFullname('namespaces') }}
+      labels: ${{ labels }}
+    spec:
+      failurePolicy: Fail
+      matchConstraints:
+        resourceRules:
+          - apiGroups: [""]
+            apiVersions: ["v1"]
+            operations: ["CREATE", "DELETE"]
+            resources: ["namespaces"]
+      matchConditions:
+        - name: the-control-plane
+          expression: request.userInfo.username == ${{ quote(serviceAccountUser) }}
+      variables:
+        - name: ns
+          expression: "request.operation == 'DELETE' ? oldObject : object"
+      validations:
+        - expression: >-
+            has(variables.ns.metadata.labels) &&
+            'okdp.io/project' in variables.ns.metadata.labels &&
+            variables.ns.metadata.labels['okdp.io/project'] == variables.ns.metadata.name
+          message: the control plane creates and deletes only the Namespace of a project, labelled okdp.io/project with its name
+        - expression: >-
+            request.operation == 'DELETE' ||
+            (has(variables.ns.metadata.labels) &&
+            'pod-security.kubernetes.io/enforce' in variables.ns.metadata.labels &&
+            variables.ns.metadata.labels['pod-security.kubernetes.io/enforce'] != 'privileged')
+          message: the control plane creates no privileged Namespace
+  - $if: ${{ values.rbac.namespacePolicy }}
+    apiVersion: admissionregistration.k8s.io/v1
+    kind: ValidatingAdmissionPolicyBinding
+    metadata:
+      name: ${{ okdpFullname('namespaces') }}
+      labels: ${{ labels }}
+    spec:
+      policyName: ${{ okdpFullname('namespaces') }}
+      validationActions: [Deny]
+
+# okdp.info.yaml: the API has no host of its own, hence no url.
+instance:
+  usage: |
+    The API is not exposed on its own host: the console routes /api to it, so
+    the browser stays same-origin. Reach it at
+    https://${{ consoleHost }}/api

@@ -1,0 +1,9 @@
+# error: additional properties 'branch', 'path', 'repoURL' not allowed
+# The single-repository mode, gone: its repository, branch and path are the
+# topology's platform and projects (path <path>/projects/{project}), the
+# output in a repository of its own.
+gitops:
+  repoURL: https://git.okdp.sandbox/okdp/deployments.git
+  branch: main
+  path: ""
+  credentialsSecret: okdp-gitops-credentials

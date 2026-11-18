@@ -5,7 +5,7 @@
   "properties": {
     "global": {
       "type": "object",
-      "description": "Platform values: the context (platform/platform-values.yaml, global.okdp), never an instance's."
+      "description": "Platform values (global.okdp): the context's layers, the platform's (platform.yaml) then its project's (project.yaml), never an instance's."
     },
     "imageRepository": {
       "type": "string",
@@ -20,7 +20,7 @@
       "type": "string",
       "title": "Image tag",
       "description": "Server image tag. Set explicitly so the deployed image is pinned; empty, the upstream half of the package version.",
-      "default": "0.9.0",
+      "default": "0.10.0",
       "x-ui-group": "Image",
       "x-ui-order": 2,
       "x-ui-advanced": true
@@ -58,44 +58,29 @@
     "gitops": {
       "type": "object",
       "title": "Deployments repositories",
-      "description": "The Git repositories the server commits the desired state to, and the engine reconciling them: one repository (repoURL, branch, path), or the topology of several.",
+      "description": "The Git repositories the server commits the desired state to, their topology (the platform's, the projects' and the output's), and the engine reconciling them.",
       "x-ui-group": "GitOps",
       "x-ui-order": 1,
       "required": [
+        "topology",
         "engine"
       ],
       "properties": {
-        "repoURL": {
-          "type": "string",
-          "title": "Repository URL",
-          "description": "https://…, ssh://… or git@host:org/repo.git (GITOPS_REPO_URL): the one repository holding platform/, projects/ and the compiled output. Required unless topology is set.",
-          "default": "",
-          "x-ui-placeholder": "https://git.example.com/org/deployments.git"
-        },
-        "branch": {
-          "type": "string",
-          "title": "Branch",
-          "description": "GITOPS_BRANCH.",
-          "default": "main"
-        },
-        "path": {
-          "type": "string",
-          "title": "Path",
-          "description": "Directory holding the layout (platform/, projects/), empty for the root (GITOPS_PATH).",
-          "default": ""
-        },
         "topology": {
           "type": "object",
           "title": "Topology",
-          "description": "Where the platform, the projects and the compiled output live, each a repository (url, branch, path; the projects' url and path may hold {project}), and the Forgejo the server creates the project repositories in. Written to a ConfigMap mounted at /etc/okdp/gitops/topology.yaml (GITOPS_CONFIG), forgejo.tokenFile set to the token of forgejoTokenSecret. Empty: repoURL, branch and path hold everything.",
-          "default": {},
-          "x-ui-advanced": true,
+          "description": "Required: where the platform, the projects and the compiled output live, each a repository (url, branch, path; the projects' url and path may hold {project}), the output in a repository of its own, never the platform's nor a project's, and the Forgejo the server creates the project repositories in (split topology). Written to a ConfigMap mounted at /etc/okdp/gitops/topology.yaml (GITOPS_CONFIG), forgejo.tokenFile set to the token of forgejoTokenSecret. The server has no single-repository mode: repoURL, branch and path are gone.",
           "additionalProperties": false,
+          "required": [
+            "platform",
+            "projects",
+            "output"
+          ],
           "properties": {
             "platform": {
               "type": "object",
               "title": "Platform",
-              "description": "The platform's sources: platform-values.yaml, connections/, components/, catalog.yaml, projects.yaml.",
+              "description": "The platform's sources: platform.yaml, catalogs.yaml, and projects.yaml in the split topology.",
               "required": [
                 "url"
               ],
@@ -118,7 +103,7 @@
             "projects": {
               "type": "object",
               "title": "Projects",
-              "description": "Each project's sources (project.yaml, connections/, services/): {project} in url or path is the project's name.",
+              "description": "Each project's sources (project.yaml, instances/): {project} in url or path is the project's name; in the io topology, the platform's repository, path projects/{project}.",
               "required": [
                 "url"
               ],
@@ -141,7 +126,7 @@
             "output": {
               "type": "object",
               "title": "Output",
-              "description": "The directory holding compiled/, flux/ and argocd/: what Flux and Argo CD read.",
+              "description": "The compiled tree, compiled/ (and argocd/root.yaml): what Flux and Argo CD read, written by the CI of its repository only, a repository of its own.",
               "required": [
                 "url"
               ],
@@ -183,16 +168,6 @@
                 }
               }
             }
-          },
-          "if": {
-            "minProperties": 1
-          },
-          "then": {
-            "required": [
-              "platform",
-              "projects",
-              "output"
-            ]
           }
         },
         "forgejoTokenSecret": {
@@ -222,19 +197,19 @@
         "releasesNamespace": {
           "type": "string",
           "title": "Releases namespace",
-          "description": "Namespace of the Flux HelmReleases and values ConfigMaps, including okdp-platform-values.",
+          "description": "Namespace of the Flux HelmReleases, whose status the server reads there (the Role <release>-engine, engine flux).",
           "default": "okdp-releases"
         },
         "argocdNamespace": {
           "type": "string",
           "title": "Argo CD namespace",
-          "description": "Namespace of the Argo CD Applications.",
+          "description": "Namespace of the Argo CD Applications, whose status the server reads there (the Role <release>-engine, engine argocd).",
           "default": "argocd"
         },
         "credentialsSecret": {
           "type": "string",
           "title": "Credentials secret",
-          "description": "Secret with write access to the repositories (Flux GitRepository keys: username/password, bearerToken, or identity/known_hosts).",
+          "description": "Secret with write access to the repositories of the sources and read access to the output's (Flux GitRepository keys: username/password, bearerToken, or identity/known_hosts).",
           "default": ""
         },
         "sshInsecureIgnoreHostKey": {
@@ -242,6 +217,18 @@
           "title": "Ignore the SSH host key",
           "description": "Sandboxes only.",
           "default": false
+        },
+        "insecureHTTPHosts": {
+          "type": "array",
+          "title": "Plain-HTTP hosts",
+          "description": "Hosts a credential (the repositories', the catalogs', the Forgejo token) is sent to over http://, in clear (GITOPS_INSECURE_HTTP_HOSTS): host names, or globs of them (path.Match). None by default: every credential for an http:// URL is refused. Name the exact hosts, e.g. a sandbox's in-cluster Forgejo, forgejo-http.forgejo.svc.cluster.local; a glob such as *.svc.cluster.local trusts every Service of the cluster.",
+          "default": [],
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9*?.:\\[\\]-]+$"
+          },
+          "x-ui-advanced": true
         },
         "author": {
           "type": "object",
@@ -317,6 +304,142 @@
           "description": "Skip the Keycloak certificate check (KEYCLOAK_TLS_INSECURE). Sandboxes only.",
           "default": false,
           "x-ui-order": 4
+        }
+      },
+      "additionalProperties": false
+    },
+    "oidc": {
+      "type": "object",
+      "title": "Console tokens",
+      "description": "The verification of the console's tokens; the issuer and the client are the platform's (global.okdp.identity.oidc, else global.okdp.oidc).",
+      "x-ui-group": "Authentication",
+      "x-ui-order": 2,
+      "x-ui-advanced": true,
+      "properties": {
+        "groupsClaim": {
+          "type": "string",
+          "title": "Groups claim",
+          "description": "The claim of the token holding the caller's groups (OIDC_GROUPS_CLAIM), a list of group names: Keycloak's groups mapper with Full group path off, the names global.okdp.access.admins and a project's access give. A dotted name is a nested claim.",
+          "default": "groups",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "tls": {
+      "type": "object",
+      "title": "CA bundle",
+      "description": "The CA bundle every TLS client of the server trusts beside the system's (OIDC, Keycloak, Trino, the SQL editor, Forgejo, Git), mounted at /etc/okdp/ca (OKDP_CA_FILE).",
+      "x-ui-group": "Server",
+      "x-ui-order": 5,
+      "x-ui-advanced": true,
+      "properties": {
+        "caBundleSecret": {
+          "type": "string",
+          "title": "CA bundle secret",
+          "description": "A Secret of the release namespace holding the CA bundle. Empty: the platform's, global.okdp.tls.caBundleSecret (none when it is unset).",
+          "default": ""
+        },
+        "caBundleKey": {
+          "type": "string",
+          "title": "CA bundle key",
+          "description": "The key of the bundle (PEM) in that Secret.",
+          "default": "ca.crt",
+          "pattern": "^[-._A-Za-z0-9]+$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "sqlEditor": {
+      "type": "object",
+      "title": "SQL editor",
+      "description": "The bounds of the SQL editor and of the connection tests (SQL_*).",
+      "x-ui-group": "SQL editor",
+      "x-ui-order": 1,
+      "x-ui-advanced": true,
+      "properties": {
+        "allowedNetworks": {
+          "type": "array",
+          "title": "Allowed networks",
+          "description": "Networks (CIDRs or addresses) the editor and the connection tests may reach although they are loopback, link-local (169.254.0.0/16, fe80::/10) or the Kubernetes API server, all refused otherwise (SQL_ALLOWED_NETWORKS).",
+          "default": [],
+          "items": {"type": "string", "pattern": "^[0-9A-Fa-f.:/]+$"}
+        },
+        "statementTimeout": {
+          "type": "string",
+          "title": "Statement timeout",
+          "description": "One statement's timeout, a Go duration, PostgreSQL's statement_timeout too (SQL_STATEMENT_TIMEOUT).",
+          "default": "2m",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+        },
+        "defaultRows": {
+          "type": "integer",
+          "title": "Default rows",
+          "description": "The row cap of a request that names none (SQL_DEFAULT_ROWS).",
+          "default": 1000,
+          "minimum": 1
+        },
+        "maxRows": {
+          "type": "integer",
+          "title": "Maximum rows",
+          "description": "The largest row cap a request may ask (SQL_MAX_ROWS).",
+          "default": 10000,
+          "minimum": 1
+        },
+        "maxResultBytes": {
+          "type": "integer",
+          "title": "Maximum result bytes",
+          "description": "Past this size of a result's rows, the rest is dropped, the result truncated (SQL_MAX_RESULT_BYTES).",
+          "default": 16777216,
+          "minimum": 1
+        },
+        "maxConcurrentPerUser": {
+          "type": "integer",
+          "title": "Statements per user",
+          "description": "Statements one user runs at once; past it, 429 (SQL_MAX_CONCURRENT_PER_USER).",
+          "default": 2,
+          "minimum": 1
+        },
+        "tokenExchangeAudience": {
+          "type": "string",
+          "title": "Token exchange audience",
+          "description": "The audience of the token a statement on Trino runs with: the caller's token is exchanged at the issuer (RFC 8693, by the client of keycloak.credentialsSecret) and forwarded only as a token of this audience. Empty: statements on Trino answer 400, sql-no-token-exchange (SQL_TOKEN_EXCHANGE_AUDIENCE).",
+          "default": "",
+          "pattern": "^[A-Za-z0-9._:/-]*$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "secretStores": {
+      "type": "object",
+      "title": "Secret stores",
+      "description": "The SecretStores the console creates in the projects' namespaces: one of kubernetes auth names the platform's Vault server or one of allowedServers.",
+      "x-ui-group": "Server",
+      "x-ui-order": 6,
+      "x-ui-advanced": true,
+      "properties": {
+        "allowedServers": {
+          "type": "array",
+          "title": "Allowed Vault servers",
+          "description": "Vault (OpenBao) server URLs allowed beside the platform's (SECRET_STORE_ALLOWED_SERVERS).",
+          "default": [],
+          "items": {"type": "string", "pattern": "^https://[^,\\s]+$"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "rbac": {
+      "type": "object",
+      "title": "RBAC",
+      "x-ui-group": "Server",
+      "x-ui-order": 7,
+      "x-ui-advanced": true,
+      "properties": {
+        "namespacePolicy": {
+          "type": "boolean",
+          "title": "Namespace policy",
+          "description": "A ValidatingAdmissionPolicy (Kubernetes >= 1.30) letting the server's ServiceAccount create only a Namespace labelled okdp.io/project with its name and a Pod Security level that is not privileged, and delete only a Namespace so labelled.",
+          "default": true
         }
       },
       "additionalProperties": false

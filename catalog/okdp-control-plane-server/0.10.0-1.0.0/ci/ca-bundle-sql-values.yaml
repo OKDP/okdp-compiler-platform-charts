@@ -1,0 +1,22 @@
+# The platform's CA bundle (global.okdp.tls.caBundleSecret, tls.caBundleSecret
+# empty) mounted at /etc/okdp/ca (OKDP_CA_FILE), the SQL editor's bounds and
+# token exchange, a Vault server allowed beside the platform's, the groups in a
+# nested claim.
+gitops:
+  topology:
+    platform: {url: "https://git.okdp.sandbox/okdp/okdp-sources.git"}
+    projects: {url: "https://git.okdp.sandbox/okdp/okdp-sources.git", path: "projects/{project}"}
+    output: {url: "https://git.okdp.sandbox/okdp/okdp-output.git"}
+  credentialsSecret: okdp-gitops-credentials
+oidc:
+  groupsClaim: realm_access.groups
+sqlEditor:
+  allowedNetworks: [10.0.12.0/24]
+  statementTimeout: 30s
+  defaultRows: 500
+  maxRows: 5000
+  maxResultBytes: 8388608
+  maxConcurrentPerUser: 1
+  tokenExchangeAudience: trino
+secretStores:
+  allowedServers: [https://vault.example.com:8200]

@@ -1,0 +1,13 @@
+# The io topology over HTTPS: Flux, the platform and the projects in one
+# repository, the output in another, a token Secret, the default console
+# host; no ValidatingAdmissionPolicy of the server's namespaces (a cluster
+# before Kubernetes 1.30).
+gitops:
+  topology:
+    platform: {url: "https://git.okdp.sandbox/okdp/okdp-sources.git"}
+    projects: {url: "https://git.okdp.sandbox/okdp/okdp-sources.git", path: "projects/{project}"}
+    output: {url: "https://git.okdp.sandbox/okdp/okdp-output.git"}
+  credentialsSecret: okdp-gitops-credentials
+insecureOciRegistries: registry.okdp.sandbox:5000
+rbac:
+  namespacePolicy: false

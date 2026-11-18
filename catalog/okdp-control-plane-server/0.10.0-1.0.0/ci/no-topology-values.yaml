@@ -1,0 +1,4 @@
+# error: missing property 'topology'
+# No topology: nowhere to commit the desired state.
+gitops:
+  credentialsSecret: okdp-gitops-credentials

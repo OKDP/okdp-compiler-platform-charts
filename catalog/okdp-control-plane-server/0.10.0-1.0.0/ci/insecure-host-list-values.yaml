@@ -1,0 +1,9 @@
+# error: - at '/gitops/insecureHTTPHosts/0': 'forgejo-http.forgejo.svc.cluster.local,git.example.com' does not match pattern
+# A comma-separated list in one item: each host is an item of its own (the
+# server reads them joined by commas).
+gitops:
+  topology:
+    platform: {url: "http://forgejo-http.forgejo.svc.cluster.local:3000/okdp/okdp-platform.git"}
+    projects: {url: "http://forgejo-http.forgejo.svc.cluster.local:3000/okdp/okdp-project-{project}.git"}
+    output: {url: "http://forgejo-http.forgejo.svc.cluster.local:3000/okdp/okdp-output.git"}
+  insecureHTTPHosts: ["forgejo-http.forgejo.svc.cluster.local,git.example.com"]

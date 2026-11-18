@@ -1,0 +1,7 @@
+# The platform values of the case ca-bundle-sql, over platform.yaml (level 0):
+# the platform's CA bundle, a trust-manager Bundle's Secret in every
+# namespace.
+global:
+  okdp:
+    tls:
+      caBundleSecret: certs-bundle

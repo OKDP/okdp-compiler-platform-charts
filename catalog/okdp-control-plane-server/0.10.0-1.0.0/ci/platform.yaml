@@ -1,0 +1,19 @@
+# The platform values of the test cases (level 0): global.okdp,
+# as platform.yaml gives them. A case's own are in
+# <case>-platform.yaml, over them; its connections in
+# <case>-connections.yaml (connections.yaml, level 2).
+#
+# The server is the platform's own: its ClusterRole and ClusterRoleBinding,
+# cluster-scoped objects, install in a privileged project only
+# (global.okdp.policy.privileged), as okdp-system is the sandbox's.
+global:
+  okdp:
+    policy:
+      privileged: [demo]
+    ingress:
+      suffix: okdp.sandbox
+      className: nginx
+    proxy:
+      httpProxy: ""
+      httpsProxy: ""
+      noProxy: ""

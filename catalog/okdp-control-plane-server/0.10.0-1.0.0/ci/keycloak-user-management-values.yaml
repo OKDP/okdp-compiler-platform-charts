@@ -1,7 +1,10 @@
 # Keycloak user management: the Secret shared with the client provisioning
 # (default keys), an explicit Keycloak URL and realm, TLS check skipped.
 gitops:
-  repoURL: https://git.okdp.sandbox/okdp/deployments.git
+  topology:
+    platform: {url: "https://git.okdp.sandbox/okdp/okdp-sources.git"}
+    projects: {url: "https://git.okdp.sandbox/okdp/okdp-sources.git", path: "projects/{project}"}
+    output: {url: "https://git.okdp.sandbox/okdp/okdp-output.git"}
   credentialsSecret: okdp-gitops-credentials
 keycloak:
   url: https://keycloak.okdp.sandbox

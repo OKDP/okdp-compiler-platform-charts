@@ -7,8 +7,8 @@ description: >-
 type: application
 # <upstream>-<okdp semver>. No dependencies: the server is OKDP's own
 # component, its objects are written whole in okdp.yaml (objects).
-version: 0.9.0-1.0.0
-appVersion: "0.9.0"
+version: 0.10.0-1.0.0
+appVersion: "0.10.0"
 home: https://okdp.io
 maintainers:
   - name: Pierre Sauvage

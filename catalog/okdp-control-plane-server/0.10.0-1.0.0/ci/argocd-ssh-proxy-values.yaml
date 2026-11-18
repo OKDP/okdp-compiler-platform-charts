@@ -1,0 +1,18 @@
+# Argo CD, SSH deploy key, the io topology (the platform and the projects in
+# a subdirectory of one repository, the output in another), a branch of its
+# own, an explicit console host, a forward proxy, pinned resources.
+consoleHost: console.example.com
+logLevel: debug
+gitops:
+  topology:
+    platform: {url: "git@git.example.com:data/deployments.git", branch: production, path: clusters/prod}
+    projects: {url: "git@git.example.com:data/deployments.git", branch: production, path: "clusters/prod/projects/{project}"}
+    output: {url: "git@git.example.com:data/deployments-output.git", branch: production}
+  engine: argocd
+  argocdNamespace: gitops
+  credentialsSecret: deploy-key
+  sshInsecureIgnoreHostKey: true
+  author: {name: Console, email: console@example.com}
+resources:
+  requests: {cpu: 100m, memory: 128Mi}
+  limits: {memory: 512Mi}
