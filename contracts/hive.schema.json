@@ -9,13 +9,11 @@
   "x-okdp-category": "catalog",
   "x-okdp-external": true,
   "x-okdp-endpoint-from": ["thriftUri"],
-  "x-okdp-internal": {
-    "thriftUri": "thrift://${ref}-hive-metastore.${namespace}.svc:9083"
-  },
   "properties": {
     "thriftUri": {
       "type": "string",
       "title": "Thrift URI",
+      "pattern": "^[^\\r\\n]*$",
       "description": "The only address the hive contract carries.",
       "x-ui-placeholder": "thrift://metastore.example.com:9083"
     }

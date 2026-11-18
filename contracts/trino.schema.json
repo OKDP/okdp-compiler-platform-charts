@@ -9,27 +9,25 @@
   "x-okdp-category": "query-engine",
   "x-okdp-external": true,
   "x-okdp-endpoint-from": ["internalUri", "uri", "url"],
-  "x-okdp-internal": {
-    "url": "https://trino-${namespace}.${suffix}",
-    "uri": "trino://trino@trino-${namespace}.${suffix}:443",
-    "internalUri": "trino://trino@${ref}-trino.${namespace}.svc:8080"
-  },
   "properties": {
     "url": {
       "type": "string",
       "title": "URL",
+      "pattern": "^[^\\r\\n]*$",
       "description": "Address a human opens in a browser or a BI tool.",
       "x-ui-placeholder": "https://trino.example.com"
     },
     "uri": {
       "type": "string",
       "title": "Trino URI",
+      "pattern": "^[^\\r\\n]*$",
       "description": "SQLAlchemy/JDBC style URI read by charts configuring a datasource.",
       "x-ui-placeholder": "trino://trino@trino.example.com:443"
     },
     "internalUri": {
       "type": "string",
       "title": "In-cluster URI",
+      "pattern": "^[^\\r\\n]*$",
       "description": "Preferred by workloads running on this cluster. Leave empty for a Trino hosted elsewhere.",
       "x-ui-placeholder": "trino://trino@trino.analytics.svc:8080"
     },
@@ -37,7 +35,7 @@
       "type": "array",
       "title": "Catalogs",
       "description": "Catalog names this Trino serves.",
-      "items": { "type": "string" }
+      "items": { "type": "string", "pattern": "^[^\\r\\n]*$" }
     }
   },
   "required": ["url", "uri"],
