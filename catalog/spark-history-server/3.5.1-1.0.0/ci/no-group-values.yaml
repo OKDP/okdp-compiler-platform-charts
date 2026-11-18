@@ -1,0 +1,5 @@
+# error: okdpSignInProxy: no allowed group
+# OIDC on, no group of the project and no roleMapping: the sign-in proxy of
+# the UI could let in no one, the compile refuses.
+storage: demo-storage
+s3SecretRef: creds-spark-history-s3

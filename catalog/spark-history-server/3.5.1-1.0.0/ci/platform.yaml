@@ -1,0 +1,5 @@
+# The platform values every case starts from: its own over them.
+global:
+  okdp:
+    access:
+      admins: [platform_admin]

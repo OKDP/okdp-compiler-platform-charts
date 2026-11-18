@@ -1,0 +1,27 @@
+# The platform values of the case platform-store, over platform.yaml (level
+# 0): the platform's S3 store, a connection of platform.yaml, an external
+# store OKDP neither deploys nor manages, with the bucket of the event logs.
+global:
+  okdp:
+    ingress:
+      suffix: okdp.sandbox
+      className: nginx
+    tls:
+      clusterIssuer: default-issuer
+      caBundleSecret: certs-bundle
+    oidc:
+      enabled: true
+      issuerUri: https://keycloak.okdp.sandbox/realms/master
+      scope: openid profile email groups
+      usePKCE: true
+      clientProvisioning: existing
+connections:
+  platform-s3:
+    contract: s3
+    apiUrl: https://s3.example.org
+    internalUrl: http://s3.storage.svc.cluster.local:8333
+    region: us-east-1
+    pathStyle: true
+    bucket: spark-logs
+    secretRef:
+      name: creds-platform-s3

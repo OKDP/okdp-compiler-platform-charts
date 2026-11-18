@@ -1,0 +1,6 @@
+# A bucket of its own, a claim the instance writes ({}: of the default class
+# of ci/platform.yaml of the repository), its prefix event-logs seeded: the
+# event log directory and the S3 identity are the claimed bucket's. OAuth
+# client registered by DCR.
+storage: {}
+memoryGi: 1

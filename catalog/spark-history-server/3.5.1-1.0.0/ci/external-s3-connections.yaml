@@ -1,4 +1,4 @@
-# The connections of the case external-s3: the instance's own (--context 2:).
+# The connections of the case external-s3: the instance's own (connections.yaml, level 2).
 connections:
   demo-storage:
     contract: s3

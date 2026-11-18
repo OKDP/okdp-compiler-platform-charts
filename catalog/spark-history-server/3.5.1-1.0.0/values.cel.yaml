@@ -1,7 +1,7 @@
 # The values of the charts of spark-history-server, by key: they see the
 # bindings of okdp.yaml (vars). Both charts are always rendered.
 
-# The former KuboCD module main: the spark-history-server chart.
+# The spark-history-server chart.
 spark-history-server:
   resources:
     limits:
@@ -10,8 +10,9 @@ spark-history-server:
   # The web proxy addresses the history server by this name.
   fullnameOverride: ${{ historyName }}
   config:
-    spark.hadoop.fs.s3a.endpoint: ${{ first([values.storage.?internalUrl.orValue(''), values.storage.apiUrl]) }}
-    spark.hadoop.fs.s3a.path.style.access: ${{ values.storage.?pathStyle.orValue(false) }}
+    spark.history.fs.logDirectory: ${{ logDirectory }}
+    spark.hadoop.fs.s3a.endpoint: ${{ first([storage.?internalUrl.orValue(''), storage.apiUrl]) }}
+    spark.hadoop.fs.s3a.path.style.access: ${{ storage.?pathStyle.orValue(false) }}
     # The Spark ACL groups of roleMapping, the non-empty ones.
     spark.admin.acls.groups:
       $if: ${{ values.?roleMapping.?admin_groups.orValue([]) }}
@@ -30,19 +31,20 @@ spark-history-server:
     - name: AWS_ACCESS_KEY_ID
       valueFrom:
         secretKeyRef:
-          name: ${{ values.s3SecretRef }}
+          name: ${{ s3Secret }}
           key: accessKey
     - name: AWS_SECRET_ACCESS_KEY
       valueFrom:
         secretKeyRef:
-          name: ${{ values.s3SecretRef }}
+          name: ${{ s3Secret }}
           key: secretKey
     # S3 certificate checking off (global.okdp.oidc.insecureSkipVerify); otherwise
     # the endpoint is verified against the CA bundle of JAVA_TOOL_OPTIONS.
     - $if: ${{ platform.oidc.?insecureSkipVerify.orValue(false) }}
       name: SPARK_HISTORY_OPTS
       value: "-Dcom.amazonaws.sdk.disableCertChecking=true"
-    - name: JAVA_TOOL_OPTIONS
+    - $if: ${{ caBundle != '' }}
+      name: JAVA_TOOL_OPTIONS
       value: "-Djavax.net.ssl.trustStore=/cacerts/bundle.p12 -Djavax.net.ssl.trustStorePassword="
     - $for: "secret in (oidcOn ? [platform.oidcClientSecret] : [])"
       $each:
@@ -62,7 +64,19 @@ spark-history-server:
               name: ${{ cookieSecret }}
               key: cookie-cipher-secret-key
 
-# The former module proxy: the spark-web-proxy chart, the UI entry point.
+# The spark-web-proxy chart, the UI entry point.
+  # The platform's CA bundle (caBundle), when set, mounted at /cacerts: the
+  # JVM's trust store (JAVA_TOOL_OPTIONS).
+  extraVolumes:
+    - $if: ${{ caBundle != '' }}
+      name: cacerts
+      secret:
+        secretName: ${{ caBundle }}
+  extraVolumeMounts:
+    - $if: ${{ caBundle != '' }}
+      name: cacerts
+      mountPath: /cacerts
+
 spark-web-proxy:
   fullnameOverride: ${{ proxyName }}
   configuration:
@@ -71,7 +85,9 @@ spark-web-proxy:
         service: ${{ historyName }}.${{ release.namespace }}.svc.cluster.local
       jobNamespaces:
         - ${{ release.namespace }}
+  # With OIDC the sign-in proxy of the objects holds the ingress.
   ingress:
+    enabled: ${{ !oidcOn }}
     className: ${{ global.okdp.ingress.className }}
     annotations: ${{ platform.ingressAnnotations }}
     hosts:

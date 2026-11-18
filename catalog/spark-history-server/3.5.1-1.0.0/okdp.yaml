@@ -1,6 +1,6 @@
 # OKDP's part of spark-history-server: the platform values it needs, OKDP's
 # defaults of its upstream charts and what an instance may override; then its
-# OAuth client (the former module oidc-dcr), OKDP's own objects and what the
+# OAuth client, OKDP's own objects and what the
 # instance publishes. values.cel.yaml computes the charts' values.
 
 roles: [spark]
@@ -10,7 +10,7 @@ dependsOn: [identity, storage, ingress]
 require:
   - ingress.suffix
   - ingress.className
-  - certificateIssuers.selfSigned.name
+  - tls.clusterIssuer
 defaults:
   spark-history-server: spark-history-server.defaults.yaml
   spark-web-proxy: spark-web-proxy.defaults.yaml
@@ -63,12 +63,21 @@ upstream:
               ingress.enabled, ingress.className, ingress.hosts, ingress.tls]
 
 vars:
+  # The platform's CA bundle, the Secret global.okdp.tls.caBundleSecret ("":
+  # none, the platform's certificates chain to a public CA).
+  caBundle: ${{ global.okdp.?tls.?caBundleSecret.orValue('') }}
   # History server Service and Deployment: <release>-spark-history-server.
   historyName: ${{ okdpFullname('spark-history-server') }}
   # Web proxy (the UI entry point): <release>-spark-web-proxy.
   proxyName: ${{ okdpFullname('spark-web-proxy') }}
-  # Public host: spark-web-proxy-<namespace>.<ingress suffix> (the KuboCD-era host).
-  host: spark-web-proxy-${{ release.namespace }}.${{ global.okdp.ingress.suffix }}
+  # Instance name: the release name without its project prefix (the console
+  # prefixes instances with their project, which would double it in the
+  # host).
+  instance: >-
+    ${{ release.name.startsWith(release.namespace + '-')
+        ? release.name.substring(size(release.namespace) + 1) : release.name }}
+  # Public host: <instance>.<namespace>.<ingress suffix>.
+  host: ${{ instance }}.${{ release.namespace }}.${{ global.okdp.ingress.suffix }}
   # The OIDC filter's redirect URI: the web proxy's /home.
   redirectUri: https://${{ host }}/home
   # Login scope, offline_access included (the oidc-dcr registration must grant it).
@@ -92,6 +101,30 @@ vars:
     spark.io.okdp.spark.authc.OidcAuthFilter.param.use-pkce: ${{ platform.oidc.?usePKCE.orValue(true) }}
     spark.history.ui.acls.enable: true
     spark.user.groups.mapping: io.okdp.spark.authz.OidcGroupMappingServiceProvider
+  # The sign-in proxy of the UI, with OIDC (okdpSignInProxy, oauth2-proxy):
+  # the web proxy and the history server have no group check of their own,
+  # and the web proxy shows live driver UIs under /sparkui whichever filters
+  # the job sets. In front of the chart's ingress: the groups of the project
+  # (platform.access.viewers) and of roleMapping. The filter behind it still
+  # applies the application ACLs. Without OIDC, no proxy: the UI is open
+  # (README, Known gaps).
+  proxy: ${{ okdpFullname('sign-in') }}
+  proxyLabels: ${{ okdpLabels('sign-in') }}
+  proxySelector: ${{ okdpSelectorLabels('sign-in') }}
+  allowedGroups: >-
+    ${{ (platform.access.viewers
+         + ['admin_groups', 'history_admin_groups', 'modify_groups', 'view_groups']
+           .map(k, values.?roleMapping[?k].orValue([])).flatten()).sort().distinct() }}
+  signIn: >-
+    ${{ !oidcOn ? {} : okdpSignInProxy({'host': host, 'upstream': 'http://' + proxyName + ':4040/',
+          'name': okdpFullname('oauth2-proxy'), 'allowedGroups': allowedGroups}) }}
+  # The event log store ({} while storage is unset), its identity
+  # (s3SecretRef, else the connection's credentials Secret, a claimed
+  # bucket's) and the event log directory, event-logs in its bucket
+  # (spark-events when the connection has none).
+  storage: '${{ type(values.storage) == map ? values.storage : {} }}'
+  s3Secret: ${{ first([values.s3SecretRef, storage.?secretRef.name.orValue('')]) }}
+  logDirectory: s3a://${{ first([storage.?bucket.orValue(''), 'spark-events']) }}/event-logs
   # The Spark properties of the instance's upstream values of
   # spark-history-server: the config map is written as a properties file, so
   # the errors section refuses any key or value that could add a line to it.
@@ -101,25 +134,27 @@ vars:
 errors:
   # Required when OIDC is on.
   - $if: ${{ oidcOn && platform.oidc.?issuerUri.orValue('') == '' }}
-    $value: "global.okdp.oidc.issuerUri is required when OIDC is enabled. It is a platform value: set it in platform/platform-values.yaml"
-  - $if: ${{ values.?s3SecretRef.orValue('') == '' }}
-    $value: "spark-history-server: s3SecretRef is required: a Secret with the keys accessKey and secretKey, this instance's own S3 identity"
+    $value: "global.okdp.oidc.issuerUri is required when OIDC is enabled. It is a platform value: set it in platform.yaml"
   # The reference left empty.
   - $if: ${{ type(values.storage) != map }}
     $value: "spark-history-server: storage: no s3 connection given"
+  - $if: ${{ type(values.storage) == map && s3Secret == '' }}
+    $value: >-
+      spark-history-server: s3SecretRef is required: a Secret with the keys accessKey and secretKey,
+      this instance's own S3 identity, connection "${{ storage.okdp.ref }}" has no secretRef
   - $spread: >-
       ${{ type(upstreamConfig) != map ? [] : upstreamConfig.map(k, k).sort().map(k, cel.bind(v, upstreamConfig[k],
           (k.matches('^[A-Za-z0-9._-]+$') ? [] : ['spark-history-server: upstream.spark-history-server.config: "' + k + '" is not a Spark property name'])
           + (type(v) in [string, bool, double, int] ? [] : ['spark-history-server: upstream.spark-history-server.config.' + k + ' must be a scalar (a Spark property value)'])
           + (type(v) == string && (v.contains('\n') || v.contains('\r')) ? ['spark-history-server: upstream.spark-history-server.config.' + k + ': a Spark property value is a single line'] : []))).flatten() }}
 
-# The OAuth client (the former module oidc-dcr), registered by dynamic client
+# The OAuth client, registered by dynamic client
 # registration in dcr mode (global.okdp.oidc.clientProvisioning: dcr): the
 # compiler adds the chart oidc-dcr (Job <release>-oidc-dcr), which writes the
 # Secret platform.oidcClientSecret (<release>-<namespace>-dcr). Nothing in
 # existing mode, nor with OIDC off.
 oidcClients:
-  - redirectUris: ['${{ redirectUri }}']
+  - redirectUris: ['${{ redirectUri }}', 'https://${{ host }}/oauth2/callback']
     grantTypes: [authorization_code, refresh_token]
     scope: ${{ scope }}
 
@@ -134,6 +169,62 @@ objects:
   - $spread: >-
       ${{ oidcOn ? okdpGeneratedSecret({'name': cookieSecret,
           'keys': [{'key': 'cookie-cipher-secret-key', 'length': 32}]}) : [] }}
+  # The sign-in proxy of the UI (signIn, vars): its pod, Service and Ingress,
+  # and its cookie secret (signIn.objects).
+  - $spread: >-
+      ${{ !oidcOn ? [] : signIn.objects }}
+  - $for: "n in (oidcOn ? [proxy] : [])"
+    $each:
+      - apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: ${{ n }}
+          labels: ${{ proxyLabels }}
+        spec:
+          replicas: 1
+          selector:
+            matchLabels: ${{ proxySelector }}
+          template:
+            metadata:
+              labels: ${{ proxyLabels }}
+            spec: >-
+              ${{ okdpPodSpec({'containers': [signIn.container], 'volumes': signIn.volumes}) }}
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: ${{ n }}
+          labels: ${{ proxyLabels }}
+        spec:
+          selector: ${{ proxySelector }}
+          ports:
+            - {name: http, port: 4180, targetPort: proxy}
+      - apiVersion: networking.k8s.io/v1
+        kind: Ingress
+        metadata:
+          name: ${{ n }}
+          labels: ${{ proxyLabels }}
+          annotations:
+            $merge: ${{ platform.ingressAnnotations }}
+            nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+            # The provider's tokens make the session cookies larger than the
+            # default buffer.
+            nginx.ingress.kubernetes.io/proxy-buffer-size: 16k
+        spec:
+          ingressClassName: ${{ global.okdp.ingress.className }}
+          rules:
+            - host: ${{ host }}
+              http:
+                paths:
+                  - path: /
+                    pathType: Prefix
+                    backend:
+                      service:
+                        name: ${{ n }}
+                        port:
+                          name: http
+          tls:
+            - hosts: ["${{ host }}"]
+              secretName: ${{ release.name }}-proxy-tls
 
 # okdp.info.yaml: a UI (the web proxy), no provided connection.
 instance:

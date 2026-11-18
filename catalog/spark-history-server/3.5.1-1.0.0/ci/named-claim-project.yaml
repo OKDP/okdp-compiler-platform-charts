@@ -1,0 +1,7 @@
+# The project's named claims (project.yaml, level 1): the bucket the Spark
+# jobs of the project write their event logs to, its prefix event-logs
+# seeded (a named claim's request is its declaration's).
+claims:
+  spark-events:
+    contract: s3
+    request: {paths: [event-logs]}

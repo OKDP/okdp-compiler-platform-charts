@@ -1,0 +1,18 @@
+# The platform values of the case claims, over platform.yaml (level 0).
+global:
+  okdp:
+    ingress:
+      suffix: okdp.sandbox
+      className: nginx
+    tls:
+      clusterIssuer: default-issuer
+      caBundleSecret: certs-bundle
+    oidc:
+      enabled: true
+      issuerUri: https://keycloak.okdp.sandbox/realms/master
+      scope: openid profile email groups
+      usePKCE: true
+      clientProvisioning: dcr
+      dcr:
+        registrationUrl: https://keycloak.okdp.sandbox/realms/master/clients-registrations/openid-connect
+        authMethod: anonymous

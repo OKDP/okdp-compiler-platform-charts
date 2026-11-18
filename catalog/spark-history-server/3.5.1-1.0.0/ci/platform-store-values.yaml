@@ -1,0 +1,4 @@
+# The platform's S3 store, the connection platform-s3 of platform.yaml
+# (platform-store-platform.yaml): the event logs in its bucket,
+# s3a://spark-logs/event-logs, the S3 identity its credentials Secret.
+storage: platform-s3

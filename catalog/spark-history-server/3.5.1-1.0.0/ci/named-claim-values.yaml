@@ -1,0 +1,4 @@
+# The project's bucket spark-events, a named claim (named-claim-project.yaml),
+# with this instance's own S3 identity over the claim's.
+storage: spark-events
+s3SecretRef: creds-spark-history-s3

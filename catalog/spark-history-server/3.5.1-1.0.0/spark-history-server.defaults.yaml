@@ -10,13 +10,5 @@ resources:
     cpu: 250m
     memory: 512Mi
 config:
-  spark.history.fs.logDirectory: s3a://spark-events/event-logs
   spark.history.fs.cleaner.enabled: true
   spark.history.fs.eventLog.rolling.maxFilesToRetain: 5
-extraVolumes:
-  - name: cacerts
-    secret:
-      secretName: certs-bundle
-extraVolumeMounts:
-  - name: cacerts
-    mountPath: /cacerts
