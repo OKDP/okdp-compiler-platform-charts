@@ -1,0 +1,5 @@
+# error: db: claim (database-server): the request does not meet the contract's claim schema (x-okdp-claim)
+# A request the database-server contract's claim schema refuses: postgis is
+# no extension a provider installs.
+db:
+  request: {extensions: [postgis]}

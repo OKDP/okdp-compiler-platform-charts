@@ -1,0 +1,7 @@
+# error: - at '/host': 'demo-pg-rw.demo.svc.cluster.local\nhive.metastore.warehouse.dir=/tmp' does not match pattern '^[^\\r\\n]*$'
+# A database host with a line break, in the JDBC URL of the metastore's
+# configuration file.
+db: demo-db-hive
+storage: demo-storage
+s3SecretRef: creds-hive-metastore-s3
+warehouseBucket: hive

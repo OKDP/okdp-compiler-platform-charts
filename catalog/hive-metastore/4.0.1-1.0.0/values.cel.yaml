@@ -1,5 +1,5 @@
-# The values of the hive-metastore chart (the former KuboCD module "main"),
-# computed from the parameters and the resolved connections (okdp.yaml vars).
+# The values of the hive-metastore chart, computed from the parameters and the
+# resolved connections (okdp.yaml vars).
 hive-metastore:
   fullNameOverride: ${{ fullname }}
   db:
@@ -20,13 +20,13 @@ hive-metastore:
     - name: THRIFT_LISTENING_PORT
       value: "9083"
   s3:
-    url: ${{ values.storage.apiUrl }}
+    url: ${{ storage.apiUrl }}
     # The upstream chart names it a directory, it is a bucket (no prefix).
-    warehouseDirectory: ${{ values.warehouseBucket }}
+    warehouseDirectory: ${{ warehouse }}
     accessKey:
-      secretName: ${{ values.s3SecretRef }}
+      secretName: ${{ s3Secret }}
     secretKey:
-      secretName: ${{ values.s3SecretRef }}
+      secretName: ${{ s3Secret }}
   resources:
     requests:
       cpu: ${{ str(values.cpu) }}

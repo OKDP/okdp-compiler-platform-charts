@@ -18,6 +18,6 @@ sources:
   - https://github.com/OKDP/platform-charts
   - https://github.com/okdp/hive-metastore
 dependencies:
-  - name: hive-metastore              # the former KuboCD module main
+  - name: hive-metastore
     repository: oci://quay.io/okdp/charts
     version: 1.4.0

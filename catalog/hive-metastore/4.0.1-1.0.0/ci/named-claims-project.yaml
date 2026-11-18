@@ -1,0 +1,9 @@
+# The project's named claims (project.yaml, level 1): a database and a
+# bucket declared once, which every instance that names them shares.
+claims:
+  metastore:
+    contract: database-server
+    class: large
+  lake:
+    contract: s3
+    request: {paths: [warehouse, bronze]}

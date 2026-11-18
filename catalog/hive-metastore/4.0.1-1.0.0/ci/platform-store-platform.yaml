@@ -1,0 +1,17 @@
+# The platform values of the case platform-store, over platform.yaml (level
+# 0): the platform's S3 store, a connection of platform.yaml, an external
+# store OKDP neither deploys nor manages, with the warehouse's bucket, its
+# credentials in the platform's secret store (global.okdp.secrets.store of
+# ci/platform.yaml), under the key platform.s3: the compiler writes the
+# ExternalSecret of <release>.platform-s3-credentials, the connection's
+# secretRef.
+connections:
+  platform-s3:
+    contract: s3
+    apiUrl: https://s3.example.org
+    internalUrl: http://s3.storage.svc.cluster.local:8333
+    region: us-east-1
+    pathStyle: true
+    bucket: warehouse
+    secretRef:
+      remoteKey: platform.s3

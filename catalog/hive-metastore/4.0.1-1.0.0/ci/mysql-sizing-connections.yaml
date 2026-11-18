@@ -1,4 +1,4 @@
-# The connections of the case mysql-sizing: the instance's own (--context 2:).
+# The connections of the case mysql-sizing: the instance's own (connections.yaml, level 2).
 connections:
   mysql:
     contract: database-server

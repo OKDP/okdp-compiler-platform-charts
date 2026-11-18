@@ -1,0 +1,7 @@
+# The database the default, a database of its own, the claim of the default
+# class (ci/platform.yaml); the warehouse a bucket of the platform's S3
+# store, the connection platform-s3 (platform-store-platform.yaml), its
+# bucket and its credentials the connection's, from the platform's secret
+# store.
+storage: platform-s3
+memoryGi: 1

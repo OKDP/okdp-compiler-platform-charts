@@ -1,0 +1,11 @@
+# Claims written out: a database of the class large (its size fixed by the
+# class), with an extension, and a bucket of a provider named, its prefix
+# warehouse seeded; the metastore's own S3 identity over the bucket's.
+db:
+  class: large
+  request: {extensions: [pg_trgm]}
+storage:
+  provider: data/store
+  request: {paths: [warehouse]}
+warehouseBucket: lake
+s3SecretRef: creds-hive-metastore-s3

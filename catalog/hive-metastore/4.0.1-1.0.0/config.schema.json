@@ -5,7 +5,7 @@
   "properties": {
     "global": {
       "type": "object",
-      "description": "Platform values: the context (platform/platform-values.yaml, global.okdp), never an instance's."
+      "description": "Platform values (global.okdp): the context's layers, the platform's (platform.yaml) then its project's (project.yaml), never an instance's."
     },
     "cpu": {
       "type": "number",
@@ -28,22 +28,35 @@
       "x-ui-columns": 2
     },
     "db": {
-      "type": "string",
+      "type": [
+        "string",
+        "object"
+      ],
       "title": "Metadata database",
-      "description": "Connection to the SQL database hosting the metastore schema. Its credentials Secret holds the keys username and password.",
+      "description": "The SQL database hosting the metastore schema: a database of its own by default ({}, a claim of the default class of database-server connections), a claim written out ({class: <class>} or {provider: <namespace>/<instance>}), or the name of a connection, of an output of another instance of the namespace, or of a named claim of the project. Its credentials Secret (secretRef) holds the keys username and password.",
       "x-okdp-connection-ref": {
-        "contract": "database-server"
+        "contract": "database-server",
+        "provision": true,
+        "require": {
+          "required": [
+            "secretRef"
+          ]
+        }
       },
       "x-ui-group": "Cluster",
       "x-ui-order": 1,
-      "default": ""
+      "default": {}
     },
     "storage": {
-      "type": "string",
+      "type": [
+        "string",
+        "object"
+      ],
       "title": "Object store",
-      "description": "Connection to the S3-compatible object store hosting the warehouse.",
+      "description": "The S3 object store hosting the warehouse: the name of a connection (the platform's store, in practice), of an output of another instance of the namespace, or of a named claim of the project; or a claim the instance writes, a bucket of its own ({}, a claim of the default class of s3 connections, {class: <class>}, {provider: <namespace>/<instance>}), its identity's credentials the connection's secretRef. No claim by default.",
       "x-okdp-connection-ref": {
-        "contract": "s3"
+        "contract": "s3",
+        "provision": true
       },
       "x-ui-group": "Storage",
       "x-ui-order": 1,
@@ -52,7 +65,7 @@
     "s3SecretRef": {
       "type": "string",
       "title": "S3 credentials secret",
-      "description": "Secret with keys accessKey/secretKey, this consumer's own S3 identity.",
+      "description": "Secret with keys accessKey/secretKey, this metastore's own S3 identity. Empty: the storage connection's credentials Secret (secretRef), a claimed bucket's identity.",
       "x-ui-group": "Storage",
       "x-ui-order": 2,
       "default": ""
@@ -60,8 +73,8 @@
     "warehouseBucket": {
       "type": "string",
       "title": "Warehouse bucket",
-      "description": "S3 bucket used as the warehouse directory.",
-      "default": "hive",
+      "description": "S3 bucket used as the warehouse directory. Empty: the storage connection's bucket, a claimed bucket.",
+      "default": "",
       "x-ui-group": "Storage",
       "x-ui-order": 3,
       "x-ui-columns": 2
@@ -94,8 +107,7 @@
   },
   "required": [
     "db",
-    "storage",
-    "s3SecretRef"
+    "storage"
   ],
   "additionalProperties": false,
   "definitions": {

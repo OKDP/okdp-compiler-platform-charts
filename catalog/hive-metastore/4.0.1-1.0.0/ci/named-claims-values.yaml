@@ -1,0 +1,4 @@
+# The project's named claims (named-claims-project.yaml): the database
+# metastore and the bucket lake, the warehouse.
+db: metastore
+storage: lake

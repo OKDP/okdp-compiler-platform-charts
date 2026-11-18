@@ -4,7 +4,10 @@
 #
 # The db and storage references arrive resolved (their x-okdp-connection-ref
 # in config.schema.json): values.db holds the database-server contract fields
-# and secretRef, values.storage the s3 ones.
+# and secretRef, values.storage the s3 ones. db is a database of its own by
+# default, a claim the provider of its class provisions (the connection it
+# publishes for the claim, its credentials Secret secretRef); storage a
+# connection the instance names, or a claim it writes.
 
 roles: [data-catalog, metastore-catalog]
 dependsOn: [database-server, storage]
@@ -12,7 +15,7 @@ defaults:
   hive-metastore: hive-metastore.defaults.yaml
 upstream:
   hive-metastore:
-    # What the platform relies on: the Service name and port the hive contract
+    # What the platform relies on: the Service name and port the hive output
     # publishes (thrift://<release>-hive-metastore:9083), the database and S3
     # credentials wired from the db/storage connections and s3SecretRef, the
     # storage backend the s3 connection implies, and the schema init Job's hook
@@ -24,23 +27,30 @@ upstream:
     append: [extraEnvRaw]
 
 vars:
-  # The Service name is the one the hive contract promises to internal
-  # references: <release>-hive-metastore.
+  # The Service the hive output publishes: <release>-hive-metastore.
   fullname: ${{ release.name }}-hive-metastore
   thriftUri: thrift://${{ fullname }}.${{ release.namespace }}.svc:9083
+  # The object store ({} while storage is unset), its identity (s3SecretRef,
+  # else the connection's credentials Secret, a claimed bucket's) and the
+  # warehouse bucket (warehouseBucket, else the connection's bucket).
+  storage: '${{ type(values.storage) == map ? values.storage : {} }}'
+  s3Secret: ${{ first([values.s3SecretRef, storage.?secretRef.name.orValue('')]) }}
+  warehouse: ${{ first([values.warehouseBucket, storage.?bucket.orValue('')]) }}
 
 errors:
-  # An unset reference stays "".
+  # An unset reference stays "". The database's credentials are required of
+  # the connection (require: secretRef).
   - $if: ${{ type(values.db) != map }}
     $value: "hive-metastore: db: no database-server connection given"
   - $if: ${{ type(values.storage) != map }}
     $value: "hive-metastore: storage: no s3 connection given"
-  - $if: ${{ type(values.db) == map && !has(values.db.secretRef) }}
+  - $if: ${{ type(values.storage) == map && s3Secret == '' }}
     $value: >-
-      hive-metastore: db: connection "${{ values.db.okdp.ref }}" has no secretRef:
-      the metastore needs a Secret with the keys username and password
-  - $if: ${{ values.?s3SecretRef.orValue('') == '' }}
-    $value: "hive-metastore: s3SecretRef is required: a Secret with the keys accessKey and secretKey, this metastore's own S3 identity"
+      hive-metastore: s3SecretRef is required: a Secret with the keys accessKey and secretKey,
+      this metastore's own S3 identity, connection "${{ storage.okdp.ref }}" has no secretRef
+  - $if: ${{ type(values.storage) == map && warehouse == '' }}
+    $value: >-
+      hive-metastore: warehouseBucket is required: connection "${{ storage.okdp.ref }}" has no bucket
 
 # okdp.info.yaml: no UI.
 instance:
@@ -49,9 +59,9 @@ instance:
 
     Thrift endpoint: `${{ thriftUri }}`
 
-# The connection this instance publishes: other instances of the project
-# reference it by its release name (the hive contract's naming convention,
-# x-okdp-internal, which the compiler checks these values against).
+# The connection this instance publishes, under the instance's name: the
+# other instances of the namespace reference it by that name (hive for
+# projects/demo/instances/hive/, the release demo-hive).
 provides:
   - contract: hive
     values:
