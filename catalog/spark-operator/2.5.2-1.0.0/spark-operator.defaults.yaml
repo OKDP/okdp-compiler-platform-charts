@@ -19,7 +19,7 @@ controller:
     - name: tmp
       mountPath: /tmp
       readOnly: false
-  # The KuboCD values deleted fsGroup (null), leaving no pod securityContext.
+  # fsGroup is deleted (null), leaving no pod securityContext.
   # The compiler merges maps, so null the whole map for the same output.
   podSecurityContext: null
 webhook:
@@ -34,7 +34,7 @@ webhook:
       mountPath: /etc/k8s-webhook-server/serving-certs
       subPath: serving-certs
       readOnly: false
-  # The KuboCD values deleted fsGroup (null), leaving no pod securityContext.
+  # fsGroup is deleted (null), leaving no pod securityContext.
   # The compiler merges maps, so null the whole map for the same output.
   podSecurityContext: null
 spark:

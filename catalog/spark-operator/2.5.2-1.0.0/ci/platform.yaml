@@ -1,0 +1,12 @@
+# The platform values of the test cases (level 0): global.okdp, as
+# platform.yaml gives them, under the case's own ci/<case>-platform.yaml.
+#
+# The operator is the platform's own: the upstream chart's objects of the
+# cluster, its ClusterRoles, ClusterRoleBindings, CRDs and webhook
+# configurations, install in a privileged project only
+# (global.okdp.policy.privileged), whose deployer is not confined to its
+# namespace (a confined deployer refuses the render otherwise).
+global:
+  okdp:
+    policy:
+      privileged: [demo]

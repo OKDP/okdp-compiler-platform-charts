@@ -2,7 +2,12 @@
 
 OKDP package of the [Kubeflow Spark Operator](https://github.com/kubeflow/spark-operator):
 runs Spark applications on Kubernetes through the `SparkApplication`,
-`ScheduledSparkApplication` and `SparkConnect` custom resources.
+`ScheduledSparkApplication` and `SparkConnect` custom resources. Its project
+is one of the platform's own, privileged (`global.okdp.policy.privileged` of
+`platform.yaml`): the upstream chart's objects of the cluster, its
+ClusterRoles, ClusterRoleBindings, CRDs and webhook configurations, are
+refused at sync by the deployer of any other project, confined to its
+namespace.
 
 A package in the okdp-compiler format: `values.cel.yaml` computes the values
 of the upstream chart `spark-operator` 2.5.2
@@ -95,6 +100,5 @@ before.
 
 ## Tests
 
-```sh
-scripts/compile-charts.sh catalog/spark-operator/2.5.2-1.0.0   # compile, check and render ci/*-values.yaml
-```
+Its cases, `ci/*-values.yaml`, compile by hand as the repository's
+[README](../../../README.md#working-on-a-package) shows.

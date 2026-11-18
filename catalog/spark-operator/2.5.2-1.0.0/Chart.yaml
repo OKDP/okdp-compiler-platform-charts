@@ -16,8 +16,8 @@ sources:
   - https://github.com/OKDP/platform-charts
   - https://github.com/kubeflow/spark-operator
 dependencies:
-  # The former KuboCD module noname. Its CRDs are the chart's crds/: a
-  # deployer upgrades them with the release (README, CRDs).
+  # Its CRDs are the chart's crds/: a deployer upgrades them with the
+  # release (README, CRDs).
   - name: spark-operator
     repository: https://kubeflow.github.io/spark-operator
     version: 2.5.2

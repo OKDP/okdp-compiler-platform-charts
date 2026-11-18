@@ -1,5 +1,4 @@
-# The values of the spark-operator chart (the former KuboCD module "noname"),
-# computed from the parameters.
+# The values of the spark-operator chart, computed from the parameters.
 spark-operator:
   prometheus:
     metrics:

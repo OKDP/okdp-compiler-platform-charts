@@ -28,7 +28,7 @@ vars:
   # Namespaces where Spark jobs run; "" allows all. They must exist.
   jobNamespaces: ${{ values.?jobNamespaces.orValue([]) }}
 
-# No UI, no provided connection: the former package usage.
+# No UI, no provided connection.
 instance:
   usage: |
     Spark Operator has been deployed successfully.
