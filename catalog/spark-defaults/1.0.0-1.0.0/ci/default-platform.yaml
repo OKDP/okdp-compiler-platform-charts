@@ -1,4 +1,4 @@
-# The platform values of the case default (--context, level 0).
+# The platform values of the case default (level 0).
 global:
   okdp:
     ingress:

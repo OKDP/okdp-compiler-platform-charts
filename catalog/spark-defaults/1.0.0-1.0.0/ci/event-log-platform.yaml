@@ -1,4 +1,4 @@
-# The platform values of the case event-log (--context, level 0).
+# The platform values of the case event-log (level 0).
 global:
   okdp:
     ingress:

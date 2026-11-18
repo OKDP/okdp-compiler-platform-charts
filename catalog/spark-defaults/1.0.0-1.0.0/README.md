@@ -42,6 +42,5 @@ had no values ConfigMap either).
 
 ## Tests
 
-```sh
-scripts/compile-charts.sh catalog/spark-defaults/1.0.0-1.0.0   # compile, check and render ci/*-values.yaml
-```
+Its cases, `ci/*-values.yaml`, compile by hand as the repository's
+[README](../../../README.md#working-on-a-package) shows.

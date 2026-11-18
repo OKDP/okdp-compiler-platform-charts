@@ -5,7 +5,7 @@
   "properties": {
     "global": {
       "type": "object",
-      "description": "Platform values: the context (platform/platform-values.yaml, global.okdp), never an instance's."
+      "description": "Platform values (global.okdp): the context's layers, the platform's (platform.yaml) then its project's (project.yaml), never an instance's."
     },
     "spark-defaults": {
       "type": "object",
