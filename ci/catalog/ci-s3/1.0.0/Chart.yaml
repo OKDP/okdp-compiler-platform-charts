@@ -1,0 +1,6 @@
+# A test provider of s3 connections, not a package of the catalog: the test
+# cases' claims of buckets bind to its instance,
+# ci/projects/data/instances/store. No upstream chart.
+apiVersion: v2
+name: ci-s3
+version: 1.0.0

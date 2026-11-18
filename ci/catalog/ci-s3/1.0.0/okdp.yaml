@@ -1,0 +1,22 @@
+# A bucket per claim bound to the instance (claims: id, contract, namespace,
+# name, request), on a store it does not deploy, as seaweedfs provisions
+# them: its connection published under the claim's ID, the
+# bucket named after it, the paths seeded as requested, and the keys of an
+# identity limited to the bucket, a generated Secret
+# (<id>-s3-credentials).
+provisions: [s3]
+provides:
+  - $for: c in claims
+    $each:
+      contract: s3
+      name: ${{ c.id }}
+      values:
+        apiUrl: https://store.${{ release.namespace }}.example.org
+        internalUrl: http://${{ release.name }}.${{ release.namespace }}.svc.cluster.local:9000
+        bucket: ${{ c.id }}
+        paths: ${{ c.request.paths }}
+        pathStyle: true
+      secret:
+        generate:
+          - {key: accessKey, length: 20, symbols: 0}
+          - {key: secretKey, length: 40, symbols: 0}

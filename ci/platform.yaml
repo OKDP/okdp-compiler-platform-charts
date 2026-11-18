@@ -1,0 +1,25 @@
+# The platform values every test case of the catalog starts from, under its
+# package's ci/platform.yaml and its own ci/<case>-platform.yaml: the
+# classes of the claims and the secret store their credentials cross
+# namespaces through.
+#
+# A claim that names neither a class nor a provider ({}, the default of the
+# database references that take one) binds to the provider of the default
+# class of its contract: the test providers of ci/projects/data, the
+# instances postgresql and store of the namespace data (the releases
+# data-postgresql and data-store), their claimers in demo. large, a class
+# of the same provider, fixes the size of the databases of its claims.
+global:
+  okdp:
+    provisioning:
+      database-server:
+        default: standard
+        classes:
+          standard: {provider: data/postgresql}
+          large: {provider: data/postgresql, request: {size: 20Gi}}
+      s3:
+        default: standard
+        classes:
+          standard: {provider: data/store}
+    secrets:
+      store: okdp-secrets

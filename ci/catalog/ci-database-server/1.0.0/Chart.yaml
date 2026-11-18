@@ -1,0 +1,6 @@
+# A test provider of database-server connections, not a package of the
+# catalog: the test cases' claims of databases bind to its instance,
+# ci/projects/data/instances/postgresql. No upstream chart.
+apiVersion: v2
+name: ci-database-server
+version: 1.0.0

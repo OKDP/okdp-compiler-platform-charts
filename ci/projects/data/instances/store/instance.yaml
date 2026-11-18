@@ -1,0 +1,8 @@
+# The provider of the default class of s3 connections of the test cases
+# (ci/platform.yaml): the release data-store, in the namespace data.
+service: ci-s3
+version: 1.0.0
+# The cases' project, demo, may claim of it by naming it ({provider:
+# data/<instance>}), not only through the platform's classes: a provider of
+# another namespace serves the projects its claimers list.
+claimers: [demo]

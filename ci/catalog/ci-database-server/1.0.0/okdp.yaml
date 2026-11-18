@@ -1,0 +1,26 @@
+# A database per claim bound to the instance (claims: id, contract,
+# namespace, name, request), on a PostgreSQL server it does not deploy, as
+# cnpg-postgresql provisions them: its connection published under the
+# claim's ID, the extensions and the size granted as requested, the owner's
+# credentials a generated Secret.
+provisions: [database-server]
+vars:
+  host: ${{ release.name }}-rw.${{ release.namespace }}.svc.cluster.local
+provides:
+  - $for: c in claims
+    $each:
+      contract: database-server
+      name: ${{ c.id }}
+      values:
+        engine: postgresql
+        host: ${{ host }}
+        port: 5432
+        dbName: ${{ c.id.replace('.', '_').replace('-', '_') }}
+        size:
+          $if: ${{ has(c.request.size) }}
+          $value: ${{ c.request.size }}
+        extensions: ${{ c.request.extensions }}
+      secretRef: {name: '${{ c.id }}-credentials'}
+      secret:
+        generate: [{key: password, length: 32, symbols: 0}]
+        stringData: {username: "${{ c.id.replace('.', '_').replace('-', '_') }}"}
