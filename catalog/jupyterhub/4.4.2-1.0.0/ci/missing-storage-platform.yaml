@@ -1,4 +1,4 @@
-# The platform values of the case missing-storage, over platform.yaml (--context, level 0).
+# The platform values of the case missing-storage, over platform.yaml (level 0).
 global:
   okdp:
     oidc:

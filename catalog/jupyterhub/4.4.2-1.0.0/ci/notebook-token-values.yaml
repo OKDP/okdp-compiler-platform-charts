@@ -1,0 +1,9 @@
+# error: jupyterhub: upstream.jupyterhub.singleuser.serviceAccountName: singleuser.serviceAccountName is set by the platform and cannot be changed
+# A notebook given a ServiceAccount, its token mounted: the notebooks mount
+# none (the PySpark sessions alone run as <release>-spark, whose Role has no
+# secrets verbs), and a pod's identity is the platform's to give.
+storage: demo-storage
+upstream:
+  jupyterhub:
+    singleuser:
+      serviceAccountName: default

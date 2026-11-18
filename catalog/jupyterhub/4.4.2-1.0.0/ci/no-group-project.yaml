@@ -1,0 +1,3 @@
+# The project of the case no-group (project.yaml, level 1): an empty access
+# gives no group a role, not even the default okdp-project-<namespace>.
+access: {}

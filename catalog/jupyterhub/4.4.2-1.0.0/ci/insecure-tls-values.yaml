@@ -1,0 +1,7 @@
+# The certificate check of the hub's OIDC calls off (validate_server_cert
+# false), honoured from global.okdp.oidc.insecureSkipVerify. The platform's
+# CA bundle stays mounted when set (SSL_CERT_FILE), this check ignores it.
+storage: demo-storage
+s3SecretRef: creds-jupyterhub-s3
+oidcRoleMapping:
+  allowed_groups: [data_engineer]

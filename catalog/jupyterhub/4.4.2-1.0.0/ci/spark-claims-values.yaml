@@ -1,0 +1,6 @@
+# The claims the PySpark sessions' pods may mount: Spark's on-demand
+# executor volumes and a claim of the namespace, by name prefix
+# (pvcPrefixes of <release>-spark-pod-bounds).
+storage: demo-storage
+s3SecretRef: creds-jupyterhub-s3
+sparkPvcPrefixes: [demo-pyspark-exec-, scratch]

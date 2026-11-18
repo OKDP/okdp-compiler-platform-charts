@@ -1,16 +1,15 @@
 # The values of the charts, by dependency key, computed from the parameters,
-# the platform values and the storage connection (the former KuboCD modules
-# main and spark-rbac, with .Context -> global.okdp, .Parameters -> values).
-# They see the bindings of okdp.yaml (vars).
+# the platform values and the storage connection. They see the bindings of
+# okdp.yaml (vars).
 #
-# jupyterhub, the former module main. The chart generates the proxy token,
+# jupyterhub. The chart generates the proxy token,
 # the cookie secret and the auth-state keys of its hub Secret with lookup +
 # randAlphaNum, which Argo CD (helm template) would redraw on every sync. It
 # is handed placeholders instead; the real values are in the ESO-generated
 # Secret <release>-hub-generated (okdp.yaml objects): the hub reads the cookie
-# secret and the auth-state keys from it (hub.existingSecret). The proxy
-# token references of the hub and proxy Deployments still name the chart's
-# Secret <release>-hub: re-pointing them is a gap (README, Known gaps).
+# secret and the auth-state keys from it (hub.existingSecret) and the proxy
+# token through extraConfig; the proxy through its own variable (proxy.chp
+# below; README, the proxy token).
 jupyterhub:
   # Resource names derive from the release name.
   fullnameOverride: ${{ release.name }}
@@ -21,6 +20,9 @@ jupyterhub:
         valueFrom: {secretKeyRef: {name: "${{ platform.oidcClientSecret }}", key: client_id}}
       OAUTH_CLIENT_SECRET:
         valueFrom: {secretKeyRef: {name: "${{ platform.oidcClientSecret }}", key: client_secret}}
+      # The platform's CA bundle, when set: the hub verifies the identity
+      # provider against it (validate_server_cert).
+      SSL_CERT_FILE: {$if: "${{ caBundle != '' }}", $value: /cacerts/ca.crt}
       # The auth-state crypt key: from the provisioned client Secret, or in
       # dcr mode from the generated hub passwords.
       JUPYTERHUB_CRYPT_KEY:
@@ -32,6 +34,9 @@ jupyterhub:
       # Placeholders: the chart would otherwise generate them with lookup +
       # randAlphaNum. The real values are in the ESO-generated Secret
       # (existingSecret below), and the hub pops these keys from hub.config.
+      # The Deployments' CONFIGPROXY_AUTH_TOKEN still reads the chart's
+      # placeholder: extraConfig (hub) and proxy.chp.extraEnv (proxy) replace
+      # it in each process.
       ConfigurableHTTPProxy:
         auth_token: ${{ placeholder }}
       CryptKeeper:
@@ -46,19 +51,57 @@ jupyterhub:
         authorize_url: ${{ global.okdp.oidc.authUrl }}
         token_url: ${{ global.okdp.oidc.tokenUrl }}
         userdata_url: ${{ global.okdp.oidc.userinfoUrl }}
-        validate_server_cert: false
+        # Against the platform's CA bundle (extraEnv SSL_CERT_FILE, the volume
+        # below) when set, else the image's CAs; off only with the platform's
+        # global.okdp.oidc.insecureSkipVerify.
+        validate_server_cert: ${{ !insecureSkipVerify }}
         claim_groups_key: groups
         manage_groups: true
         userdata_params: {state: state}
         username_key: preferred_username
         scope: ${{ scope.split(' ') }}
+        # Who signs in: the project's editors and the platform's
+        # administrators (platform.access), unless oidcRoleMapping gives
+        # allowed_groups.
+        allowed_groups: ${{ platform.access.editors }}
         $merge: ${{ oidcRoleMapping }}
-    # The hub reads the generated cookie secret and auth-state keys from it
-    # before its own Secret (z2jh get_secret_value).
+    # The hub reads the generated cookie secret, auth-state keys and proxy
+    # token from it before its own Secret (z2jh get_secret_value).
     existingSecret: ${{ hubGenerated }}
+    # After the chart's CONFIGPROXY_AUTH_TOKEN and in the hub process: a
+    # second entry of that variable (hub.extraEnv) would be refused by
+    # server-side apply (README, the proxy token).
+    extraConfig:
+      okdpProxyAuthToken: |
+        c.ConfigurableHTTPProxy.auth_token = get_secret_value("hub.config.ConfigurableHTTPProxy.auth_token")
     db:
       pvc:
         storageClassName: ${{ str(global.okdp.storageClass.workspace) }}
+    # The platform's CA bundle, when set (SSL_CERT_FILE above).
+    extraVolumes:
+      - $if: ${{ caBundle != '' }}
+        name: cacerts
+        secret:
+          secretName: ${{ caBundle }}
+    extraVolumeMounts:
+      - $if: ${{ caBundle != '' }}
+        name: cacerts
+        mountPath: /cacerts
+        readOnly: true
+
+  # The proxy's API token, the generated one (key
+  # hub.config.ConfigurableHTTPProxy.auth_token, the hub reads the same):
+  # configurable-http-proxy reads only the environment variable
+  # CONFIGPROXY_AUTH_TOKEN, whose chart entry holds the placeholder, and a
+  # second entry would be refused by server-side apply. So the token is in a
+  # variable of its own, copied over the placeholder by a module node
+  # preloads, before the proxy reads its environment (README, the proxy token).
+  proxy:
+    chp:
+      extraEnv:
+        OKDP_CONFIGPROXY_AUTH_TOKEN:
+          valueFrom: {secretKeyRef: {name: "${{ hubGenerated }}", key: "hub.config.ConfigurableHTTPProxy.auth_token"}}
+        NODE_OPTIONS: --import=data:text/javascript,process.env.CONFIGPROXY_AUTH_TOKEN=process.env.OKDP_CONFIGPROXY_AUTH_TOKEN
 
   ingress:
     annotations: ${{ platform.ingressAnnotations }}
@@ -76,12 +119,17 @@ jupyterhub:
       # https://github.com/jpmorganchase/jupyter-fs
       FS_S3_ENDPOINT_URL: ${{ str(s3.apiUrl) }}
       FS_S3_ACCESS_KEY:
-        valueFrom: {secretKeyRef: {name: "${{ str(values.s3SecretRef) }}", key: accessKey}}
+        valueFrom: {secretKeyRef: {name: "${{ s3Secret }}", key: accessKey}}
       FS_S3_SECRET_KEY:
-        valueFrom: {secretKeyRef: {name: "${{ str(values.s3SecretRef) }}", key: secretKey}}
+        valueFrom: {secretKeyRef: {name: "${{ s3Secret }}", key: secretKey}}
       # Notebook pod IP used by Spark driver (spark.driver.host) in client mode
       POD_IP:
         valueFrom: {fieldRef: {fieldPath: status.podIP}}
+      # The platform's CA bundle (caBundle), when set, mounted at /cacerts.
+      AWS_CA_BUNDLE: {$if: "${{ caBundle != '' }}", $value: /cacerts/ca.crt}
+      REQUESTS_CA_BUNDLE: {$if: "${{ caBundle != '' }}", $value: /cacerts/ca.crt}
+      CURL_CA_BUNDLE: {$if: "${{ caBundle != '' }}", $value: /cacerts/ca.crt}
+      SSL_CERT_FILE: {$if: "${{ caBundle != '' }}", $value: /cacerts/ca.crt}
       # The PySpark connections' S3 identities and the platform proxy.
       $merge: ${{ notebookEnv }}
 
@@ -94,7 +142,7 @@ jupyterhub:
             - -lc
             - |
               set -e
-              HOME="/home/$JUPYTERHUB_USER"
+              HOME=/home/jovyan
               if [ ! -f "$HOME/Welcome.ipynb" ]; then
                 cp /etc/jupyterhub/welcome/Welcome.ipynb "$HOME/Welcome.ipynb"
               fi
@@ -131,7 +179,7 @@ jupyterhub:
               "secret": os.environ["FS_S3_SECRET_KEY"],
               "client_kwargs": {
                 "endpoint_url": os.environ["FS_S3_ENDPOINT_URL"],
-                "verify": os.environ["AWS_CA_BUNDLE"],
+                "verify": os.environ.get("AWS_CA_BUNDLE", True),
               },
             },
            }
@@ -145,22 +193,29 @@ jupyterhub:
       limit: ${{ str(values.memoryGi * 2.0) }}G
       guarantee: ${{ str(values.memoryGi) }}G
 
+    # The profiles' images by digest (the package's: an instance's profiles
+    # are appended). quay.io/okdp/spark-py has no spark-3.4.4 image: the
+    # PySpark 3.4.4 executors' tag is not published (README, Known gaps).
     profileList:
       - display_name: "📊 Scientific Python"
         description: "Includes Git, Pandas, NumPy, S3 browser, and Trino SQL support."
         kubespawner_override:
-          image: quay.io/okdp/jupyter/scipy-notebook:python-3.12.12-hub-5.4.2-lab-4.5.0
+          image: quay.io/okdp/jupyter/scipy-notebook:python-3.12.12-hub-5.4.2-lab-4.5.0@sha256:bf30cc6edc369e70c8a06c440acc24b4f8d1049b0760b98ea5782c05a2b4bcba
           image_pull_policy: Always
       - display_name: "📊 Data Science"
         description: "Includes Git, Pandas, NumPy, S3 browser, and Trino SQL support, Matplotlib, R, and Julia"
         kubespawner_override:
-          image: quay.io/okdp/jupyter/datascience-notebook:python-3.12.12-hub-5.4.2-lab-4.5.0
+          image: quay.io/okdp/jupyter/datascience-notebook:python-3.12.12-hub-5.4.2-lab-4.5.0@sha256:6d0bb699064a9137571db67e594cd0bf6ac70a4f136c473e19c17bdefb98754f
           image_pull_policy: Always
       - display_name: "🔥 PySpark"
         description: "Apache Spark big data processing"
         default: true
         kubespawner_override:
           image_pull_policy: Always
+          # The Spark driver (client mode) creates its executors: the
+          # sessions' ServiceAccount and its token, no secrets in its Role.
+          service_account: ${{ sparkServiceAccount }}
+          automount_service_account_token: true
           environment:
             # Platform defaults every notebook job inherits. A job overrides
             # them in its own SparkSession builder.
@@ -172,7 +227,7 @@ jupyterhub:
               spark344:
                 display_name: "PySpark 3.4.4 / Python 3.11"
                 kubespawner_override:
-                  image: quay.io/okdp/jupyter/all-spark-notebook:spark-3.4.4-python-3.11-java-17-scala-2.12
+                  image: quay.io/okdp/jupyter/all-spark-notebook:spark-3.4.4-python-3.11-java-17-scala-2.12@sha256:afb3a5fec923778d4b0fce19b38b5f26de9ff4112445859e1b4e8c07a44cad80
                   image_pull_policy: Always
                   environment:
                     SPARK_EXECUTOR_IMAGE: quay.io/okdp/spark-py:spark-3.4.4-python-3.11-scala-2.12-java-17
@@ -180,17 +235,34 @@ jupyterhub:
                 display_name: "PySpark 3.5.6 / Python 3.11"
                 default: true
                 kubespawner_override:
-                  image: quay.io/okdp/jupyter/all-spark-notebook:spark-3.5.6-python-3.11-java-17-scala-2.12
+                  image: quay.io/okdp/jupyter/all-spark-notebook:spark-3.5.6-python-3.11-java-17-scala-2.12@sha256:6f8e51e9691fb0af69cae06ac1d77f5fcb78468d19027bd35e42d6a17a621331
                   image_pull_policy: Always
                   environment:
-                    SPARK_EXECUTOR_IMAGE: quay.io/okdp/spark-py:spark-3.5.6-python-3.11-scala-2.12-java-17
+                    SPARK_EXECUTOR_IMAGE: quay.io/okdp/spark-py:spark-3.5.6-python-3.11-scala-2.12-java-17@sha256:6e0b501b2ccd756129f8c9b5f2dcf893937a775b1e86195fd90735010ffc506c
 
     storage:
       dynamic:
+        # The homes on the platform's workspace storage class.
+        storageClass: ${{ str(global.okdp.storageClass.workspace) }}
         # PVC and volume names carry the release name: no conflict between instances.
         pvcNameTemplate: ${{ release.name }}-claim-{username}{servername}
         volumeNameTemplate: ${{ release.name }}-volume-{username}{servername}
+      # The platform's CA bundle (caBundle), when set: the notebooks trust it
+      # (the variables of extraEnv, the PySpark JVMs' trust store).
+      extraVolumes:
+        - $if: ${{ caBundle != '' }}
+          name: cacerts
+          secret:
+            secretName: ${{ caBundle }}
+      extraVolumeMounts:
+        - $if: ${{ caBundle != '' }}
+          name: cacerts
+          mountPath: /cacerts
+          readOnly: true
 
-# spark-rbac, the former module spark-rbac: the spark ServiceAccount and Role
-# the notebooks and their executors use. Not written: rendered with OKDP's
-# defaults alone (spark-rbac.defaults.yaml).
+# spark-rbac: the ServiceAccount of the PySpark
+# sessions and their executors, <release>-spark; its Role is OKDP's
+# (okdp.yaml objects), not the chart's (spark-rbac.defaults.yaml).
+spark-rbac:
+  serviceAccount:
+    name: ${{ sparkServiceAccount }}

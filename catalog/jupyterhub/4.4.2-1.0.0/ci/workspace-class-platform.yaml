@@ -1,0 +1,15 @@
+# The platform values of the case workspace-class, over platform.yaml (level 0).
+global:
+  okdp:
+    oidc:
+      enabled: true
+      issuerUri: https://keycloak.okdp.sandbox/realms/master
+      authUrl: https://keycloak.okdp.sandbox/realms/master/protocol/openid-connect/auth
+      tokenUrl: https://keycloak.okdp.sandbox/realms/master/protocol/openid-connect/token
+      userinfoUrl: https://keycloak.okdp.sandbox/realms/master/protocol/openid-connect/userinfo
+      displayName: keycloak
+      clientProvisioning: existing
+    # The notebooks' homes on the platform's workspace class, not "standard".
+    storageClass:
+      data: standard
+      workspace: local-path

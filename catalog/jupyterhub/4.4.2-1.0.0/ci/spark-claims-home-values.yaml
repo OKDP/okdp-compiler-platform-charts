@@ -1,0 +1,5 @@
+# error: sparkPvcPrefixes: "demo-jupyterhub-claim-" reaches the notebooks' home volumes
+# A prefix that covers the notebooks' homes, <release>-claim-<user>.
+storage: demo-storage
+s3SecretRef: creds-jupyterhub-s3
+sparkPvcPrefixes: [demo-jupyterhub-claim-]

@@ -1,0 +1,9 @@
+# error: upstream.spark-rbac.serviceAccount: serviceAccount is denied to the instance's upstream values
+# A workload identity on the spark ServiceAccount, an IAM role: the
+# platform's to give, denied to the upstream values of a project that is not
+# privileged (global.okdp.policy.upstream).
+storage: demo-storage
+upstream:
+  spark-rbac:
+    serviceAccount:
+      annotations: {eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/spark"}

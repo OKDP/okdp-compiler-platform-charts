@@ -5,7 +5,7 @@
   "properties": {
     "global": {
       "type": "object",
-      "description": "Platform values: the context (platform/platform-values.yaml, global.okdp), never an instance's."
+      "description": "Platform values (global.okdp): the context's layers, the platform's (platform.yaml) then its project's (project.yaml), never an instance's."
     },
     "cpu": {
       "type": "number",
@@ -38,11 +38,15 @@
       "x-ui-advanced": true
     },
     "storage": {
-      "type": "string",
+      "type": [
+        "string",
+        "object"
+      ],
       "title": "Object store",
-      "description": "Connection to the S3-compatible object store backing the jupyter-fs file browser.",
+      "description": "The S3-compatible object store backing the jupyter-fs file browser: the name of a connection, of an output of another instance of the namespace, or of a named claim of the project (a bucket the project's services share); or a claim, a bucket of its own ({}, {class: <class>}).",
       "x-okdp-connection-ref": {
-        "contract": "s3"
+        "contract": "s3",
+        "provision": true
       },
       "x-ui-group": "Storage",
       "x-ui-order": 1,
@@ -51,7 +55,7 @@
     "s3SecretRef": {
       "type": "string",
       "title": "S3 credentials secret",
-      "description": "Secret with keys accessKey/secretKey, this instance's own S3 identity.",
+      "description": "Secret with keys accessKey/secretKey, this instance's own S3 identity. Empty: the storage connection's credentials Secret (secretRef), a claimed bucket's identity.",
       "x-ui-group": "Storage",
       "x-ui-order": 2,
       "default": ""
@@ -87,7 +91,7 @@
     "oidcRoleMapping": {
       "type": "object",
       "title": "Role mapping",
-      "description": "Optional GenericOAuthenticator overrides (claim_groups_key, allowed_groups, admin_groups, ...). Without allowed_groups the hub answers 403 to everyone.",
+      "description": "Optional GenericOAuthenticator overrides (claim_groups_key, allowed_groups, admin_groups, ...). allowed_groups defaults to the project's editors and the platform's administrators (platform.access).",
       "default": {},
       "properties": {},
       "additionalProperties": true,
@@ -149,6 +153,20 @@
       "x-ui-order": 4,
       "x-ui-advanced": true
     },
+    "sparkPvcPrefixes": {
+      "type": "array",
+      "title": "Volume claims of the sessions",
+      "description": "Name prefixes of the PersistentVolumeClaims the pods of the PySpark sessions may mount (data.pvcPrefixes of <release>-spark-pod-bounds, the param of the platform's okdp-pod-bounds): none by default, the sessions mount no claim. Needed by a session that sets Spark's on-demand executor volumes (spark.kubernetes.executor.volumes.persistentVolumeClaim.<name>.options.claimName=OnDemand, whose claims Spark names after the executor pod) or mounts a claim of the namespace; never a prefix of the notebooks' homes (claim-).",
+      "default": [],
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9-])?$",
+        "maxLength": 200
+      },
+      "x-ui-group": "Spark",
+      "x-ui-order": 5,
+      "x-ui-advanced": true
+    },
     "upstream": {
       "type": "object",
       "title": "Upstream chart values",
@@ -175,7 +193,7 @@
         "spark-rbac": {
           "type": "object",
           "title": "spark-rbac",
-          "description": "Values of the spark-rbac chart 1.0.1 (oci://quay.io/okdp/charts), the spark ServiceAccount and Role of the notebooks: serviceAccount.annotations (workload identity), serviceAccount.automount, rbac.annotations. Refused: rbac.create, serviceAccount.create, serviceAccount.name.",
+          "description": "Values of the spark-rbac chart 1.0.1 (oci://quay.io/okdp/charts), the ServiceAccount <release>-spark of the PySpark sessions (its Role is OKDP's, the chart's off): serviceAccount.annotations (workload identity) and serviceAccount.automount in a privileged project only (the compiler denies the key serviceAccount to the others' upstream values). Refused: rbac.create, serviceAccount.create, serviceAccount.name.",
           "default": {},
           "x-ui-widget": "yaml",
           "x-ui-order": 2,
@@ -189,8 +207,7 @@
     }
   },
   "required": [
-    "storage",
-    "s3SecretRef"
+    "storage"
   ],
   "additionalProperties": false,
   "definitions": {

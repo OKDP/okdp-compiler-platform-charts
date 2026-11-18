@@ -1,6 +1,9 @@
-# The platform values of the case existing-oidc, over platform.yaml (--context, level 0).
+# The platform values of the case existing-oidc, over platform.yaml (level 0):
+# no CA bundle (""), the platform's certificates chaining to a public CA.
 global:
   okdp:
+    tls:
+      caBundleSecret: ""
     oidc:
       enabled: true
       issuerUri: https://keycloak.okdp.sandbox/realms/master

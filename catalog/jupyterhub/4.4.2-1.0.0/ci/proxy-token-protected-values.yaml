@@ -1,0 +1,13 @@
+# error: upstream.jupyterhub.proxy.chp.extraEnv.NODE_OPTIONS: proxy.chp.extraEnv.NODE_OPTIONS is set by the platform and cannot be changed
+# The preload that hands the proxy the generated token: the platform's (a
+# second CONFIGPROXY_AUTH_TOKEN entry would be refused by server-side apply).
+storage: demo-storage
+s3SecretRef: creds-jupyterhub-s3
+oidcRoleMapping:
+  allowed_groups: [data_engineer]
+upstream:
+  jupyterhub:
+    proxy:
+      chp:
+        extraEnv:
+          NODE_OPTIONS: --max-old-space-size=256

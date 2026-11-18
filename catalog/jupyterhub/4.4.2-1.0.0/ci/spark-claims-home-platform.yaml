@@ -1,0 +1,14 @@
+# The platform values of the case spark-claims-home, over platform.yaml (level 0):
+# no CA bundle (""), the platform's certificates chaining to a public CA.
+global:
+  okdp:
+    tls:
+      caBundleSecret: ""
+    oidc:
+      enabled: true
+      issuerUri: https://keycloak.okdp.sandbox/realms/master
+      authUrl: https://keycloak.okdp.sandbox/realms/master/protocol/openid-connect/auth
+      tokenUrl: https://keycloak.okdp.sandbox/realms/master/protocol/openid-connect/token
+      userinfoUrl: https://keycloak.okdp.sandbox/realms/master/protocol/openid-connect/userinfo
+      displayName: keycloak
+      clientProvisioning: existing

@@ -1,7 +1,7 @@
 # OKDP's part of jupyterhub: the platform values it needs, its upstream
 # charts' defaults and what an instance may override; then the mapping besides
 # the charts' values (values.cel.yaml): the bindings, the errors, its OAuth
-# client (the former module oidc-dcr), OKDP's own objects and what the
+# client, OKDP's own objects and what the
 # instance publishes. ${{ ... }} is a CEL expression; Kubernetes' $(VAR), the
 # shell's $VAR and the {{ ... }} of the ESO templates stay literal.
 
@@ -10,7 +10,7 @@ dependsOn: [ingress, storage]
 require:
   - ingress.suffix
   - ingress.className
-  - certificateIssuers.selfSigned.name
+  - tls.clusterIssuer
   - storageClass.workspace
   - oidc.authUrl
   - oidc.tokenUrl
@@ -28,11 +28,13 @@ upstream:
     # with lookup + rand). OIDC sign-in: the authenticator class, the auth
     # state the notebooks read their access token from, the endpoints and
     # callback registered with the identity provider, the client env of the
-    # hub. The ingress host registered with the identity provider. The
+    # hub. The proxy token's source (the hub's extraConfig block and the
+    # proxy's variables, read in values.cel.yaml). The ingress host registered
+    # with the identity provider. The
     # pre-pull hook (its checksum compares with the previous one, lookup).
     # The notebook env and files the platform wires (jupyter-fs S3 identity,
-    # Spark driver host, access_token helper) and the spark ServiceAccount of
-    # spark-rbac. The env variables that depend on the instance (the
+    # Spark driver host, access_token helper) and the notebooks' identity (no
+    # ServiceAccount; the PySpark sessions' <release>-spark of spark-rbac). The env variables that depend on the instance (the
     # <PREFIX>_S3_ACCESS_KEY/<PREFIX>_S3_SECRET_KEY of the PySpark
     # connections, the platform proxy variables) cannot be listed here: the
     # errors section refuses them. hub.extraConfig is a map an instance adds
@@ -63,10 +65,14 @@ upstream:
       - hub.extraEnv.OAUTH_CLIENT_ID
       - hub.extraEnv.OAUTH_CLIENT_SECRET
       - hub.extraEnv.JUPYTERHUB_CRYPT_KEY
+      - hub.extraEnv.SSL_CERT_FILE
+      - hub.extraConfig.okdpProxyAuthToken
       - hub.existingSecret
       - hub.cookieSecret
       - hub.services
       - proxy.secretToken
+      - proxy.chp.extraEnv.OKDP_CONFIGPROXY_AUTH_TOKEN
+      - proxy.chp.extraEnv.NODE_OPTIONS
       - ingress.enabled
       - ingress.ingressClassName
       - ingress.hosts
@@ -84,29 +90,56 @@ upstream:
       - singleuser.extraFiles.notebook_oauth2
       - singleuser.extraFiles.welcome-notebook
     # The hub roles (the notebooks' auth-state scope), the CA bundle volume of
-    # the notebooks, and the profiles (the PySpark one carries the platform
-    # Spark conf): an instance adds to them.
+    # the hub and the notebooks, and the profiles (the PySpark one carries the
+    # platform Spark conf): an instance adds to them.
     append:
       - hub.config.JupyterHub.load_roles
+      - hub.extraVolumes
+      - hub.extraVolumeMounts
       - singleuser.storage.extraVolumes
       - singleuser.storage.extraVolumeMounts
       - singleuser.profileList
   spark-rbac:
-    # The spark ServiceAccount the notebooks and their executors run as
-    # (singleuser.serviceAccountName and
-    # spark.kubernetes.authenticate.serviceAccountName name it) and its Role.
-    # Annotations (workload identity) and automount remain open.
+    # The ServiceAccount <release>-spark the PySpark sessions and their
+    # executors run as (the PySpark profile and
+    # spark.kubernetes.authenticate.serviceAccountName name it), without the
+    # chart's Role: its RoleBinding grants every ServiceAccount of the
+    # namespace the namespace's Secrets. Annotations (workload identity) and
+    # automount remain open to a privileged project only: the compiler denies
+    # the key serviceAccount to the others' upstream values
+    # (global.okdp.policy.upstream).
     protect: [rbac.create, serviceAccount.create, serviceAccount.name]
 
 vars:
-  # Public URL: https://jupyterhub-<namespace>.<ingress suffix>.
-  host: jupyterhub-${{ release.namespace }}.${{ global.okdp.ingress.suffix }}
+  # The platform's CA bundle, the Secret global.okdp.tls.caBundleSecret ("":
+  # none, the platform's certificates chain to a public CA).
+  caBundle: ${{ global.okdp.?tls.?caBundleSecret.orValue('') }}
+  # Instance name: the release name without its project prefix (the console
+  # prefixes instances with their project, which would double it in the
+  # host).
+  instance: >-
+    ${{ release.name.startsWith(release.namespace + '-')
+        ? release.name.substring(size(release.namespace) + 1) : release.name }}
+  # Public URL: https://<instance>.<namespace>.<ingress suffix>.
+  host: ${{ instance }}.${{ release.namespace }}.${{ global.okdp.ingress.suffix }}
   url: https://${{ host }}
+  # Off only with global.okdp.oidc.insecureSkipVerify (a sandbox's).
+  insecureSkipVerify: ${{ platform.oidc.?insecureSkipVerify.orValue(false) }}
   # Scopes the hub requests at login (the oidc-dcr registration must grant
   # them, openid aside).
   scope: openid profile email groups
   # The ESO-generated hub passwords (objects).
   hubGenerated: ${{ release.name }}-hub-generated
+  # The ServiceAccount of the PySpark sessions (spark-rbac) and its Role
+  # (objects): the notebook of the PySpark profile, the Spark driver in client
+  # mode, creates its executors; the other profiles mount no token.
+  sparkServiceAccount: ${{ okdpFullname('spark') }}
+  # The claims the sessions' pods may mount (okdp-pod-bounds, data.pvcPrefixes
+  # of the bounds below): none unless sparkPvcPrefixes lists name prefixes.
+  # The notebooks' homes, <release>-claim-<user> (pvcNameTemplate), are never
+  # the sessions' to mount.
+  sparkPvcPrefixes: ${{ values.sparkPvcPrefixes }}
+  homePrefix: ${{ release.name }}-claim-
   # Values the jupyterhub chart would generate with lookup + randAlphaNum. The
   # chart is handed this placeholder so that it renders nothing random; the
   # real values are in the ESO-generated Secret, which the hub reads first
@@ -115,6 +148,9 @@ vars:
   # The storage connection (s3 contract), resolved by the compiler; "" when
   # unset (refused in errors).
   s3: "${{ type(values.?storage.orValue('')) == map ? values.storage : {'apiUrl': '', 'region': ''} }}"
+  # The instance's S3 identity: s3SecretRef, else the storage connection's
+  # credentials Secret (a claimed bucket's).
+  s3Secret: ${{ first([values.?s3SecretRef.orValue(''), s3.?secretRef.name.orValue('')]) }}
   # The list and map parameters, [] / {} when unset or null (Helm's default).
   pysparkNames: "${{ cel.bind(l, values.?pyspark.orValue([]), type(l) == list ? l : []) }}"
   sparkConnections: "${{ cel.bind(l, values.?sparkConnections.orValue([]), type(l) == list ? l : []) }}"
@@ -123,9 +159,8 @@ vars:
   oidcRoleMapping: "${{ cel.bind(m, values.?oidcRoleMapping.orValue({}), type(m) == map ? m : {}) }}"
   # The placeholders a free-text parameter (welcomeNotebook, sparkDefaults,
   # the properties of sparkConnections) may carry, replaced by the chains of
-  # replace() below (CEL has no user functions). Written ${name}, as the
-  # x-okdp-internal conventions of the contracts: an instance value holds no
-  # "{{" (okdp-compile refuses it). Every free-text parameter:
+  # replace() below (CEL has no user functions). Written ${name}: an instance
+  # value holds no "{{" (okdp-compile refuses it). Every free-text parameter:
   #   ${suffix}     the platform's ingress suffix
   #   ${release}    the release name
   #   ${namespace}  the release namespace
@@ -205,12 +240,17 @@ vars:
     - --master k8s://https://kubernetes.default.svc.cluster.local
     - --conf spark.submit.deployMode=client
     - --conf spark.driver.host=$(POD_IP)
-    - --conf spark.kubernetes.driverEnv.SPARK_USER=$(NB_USER)
-    - --conf spark.executorEnv.SPARK_USER=$(NB_USER)
+    - --conf spark.kubernetes.driverEnv.SPARK_USER=$(JUPYTERHUB_USER)
+    - --conf spark.executorEnv.SPARK_USER=$(JUPYTERHUB_USER)
     - --conf spark.kubernetes.container.image=$(SPARK_EXECUTOR_IMAGE)
-    - --conf spark.kubernetes.executor.secrets.certs-bundle=/cacerts
-    - --conf "spark.driver.extraJavaOptions=-Djavax.net.ssl.trustStore=/cacerts/bundle.p12 -Djavax.net.ssl.trustStoreType=PKCS12 -Djavax.net.ssl.trustStorePassword="
-    - --conf "spark.executor.extraJavaOptions=-Djavax.net.ssl.trustStore=/cacerts/bundle.p12 -Djavax.net.ssl.trustStoreType=PKCS12 -Djavax.net.ssl.trustStorePassword="
+    # The platform's CA bundle, when set: the executors mount it, the JVMs
+    # trust its bundle.p12.
+    - $if: ${{ caBundle != '' }}
+      $value: --conf spark.kubernetes.executor.secrets.${{ caBundle }}=/cacerts
+    - $if: ${{ caBundle != '' }}
+      $value: --conf "spark.driver.extraJavaOptions=-Djavax.net.ssl.trustStore=/cacerts/bundle.p12 -Djavax.net.ssl.trustStoreType=PKCS12 -Djavax.net.ssl.trustStorePassword="
+    - $if: ${{ caBundle != '' }}
+      $value: --conf "spark.executor.extraJavaOptions=-Djavax.net.ssl.trustStore=/cacerts/bundle.p12 -Djavax.net.ssl.trustStoreType=PKCS12 -Djavax.net.ssl.trustStorePassword="
     - --conf spark.kubernetes.namespace=${{ release.namespace }}
     - --conf spark.eventLog.compress=true
     - --conf spark.eventLog.rolling.enabled=true
@@ -225,7 +265,10 @@ vars:
                 .replace('NAMESPACE', release.namespace) }}
         kv: ${{ k + '=' + v }}
       $each: ${{ '--conf ' + quote(kv) }}
-    - --conf spark.kubernetes.authenticate.serviceAccountName=spark
+    # The sessions' ServiceAccount, the executors' too: it mounts no token
+    # unless the pod asks (the notebook does, the executors do not).
+    - --conf spark.kubernetes.authenticate.serviceAccountName=${{ sparkServiceAccount }}
+    - --conf spark.kubernetes.authenticate.executor.serviceAccountName=${{ sparkServiceAccount }}
     - $for: c in pyspark
       $each: ${{ c.conf.map(l, '--conf ' + quote(l)) }}
     - pyspark-shell
@@ -265,18 +308,27 @@ vars:
           ? u.?singleuser.orValue({}).?extraEnv.orValue({}) : {}) }}
 
 errors:
-  - $if: ${{ first([values.?s3SecretRef.orValue('')]) == '' }}
-    $value: "jupyterhub: s3SecretRef is required: a Secret with the keys accessKey and secretKey, this instance's own S3 identity"
+  # Nobody could sign in (the hub answers 403 to everyone): the project gives
+  # no group a role and oidcRoleMapping names no allowed_groups.
+  - $if: ${{ platform.oidc.enabled && oidcRoleMapping.?allowed_groups.orValue(platform.access.editors).size() == 0 }}
+    $value: "jupyterhub: no group may sign in: the project's access gives no group a role and oidcRoleMapping names no allowed_groups (global.okdp.access.admins, the platform's administrators, are none either)"
+  - $if: ${{ type(values.?storage.orValue('')) == map && s3Secret == '' }}
+    $value: >-
+      jupyterhub: s3SecretRef is required: a Secret with the keys accessKey and secretKey,
+      this instance's own S3 identity, connection "${{ s3.okdp.ref }}" has no secretRef
   - $if: ${{ type(values.?storage.orValue('')) != map }}
     $value: "jupyterhub: storage: no s3 connection given"
   - $spread: >-
       ${{ sparkConnections.transformList(i, c, type(c) != map || first([c.?name.orValue('')]) == '',
             'jupyterhub: sparkConnections[' + string(i) + ']: name is required') }}
   - $spread: >-
+      ${{ sparkPvcPrefixes.filter(p, p.startsWith(homePrefix) || homePrefix.startsWith(p))
+          .map(p, 'jupyterhub: sparkPvcPrefixes: "' + p + '" reaches the notebooks\' home volumes (' + homePrefix + '<user>): the sessions mount none of them') }}
+  - $spread: >-
       ${{ dynamicProtect.filter(k, k in userEnv).map(k, 'jupyterhub: upstream.jupyterhub.singleuser.extraEnv.' + k
           + ': singleuser.extraEnv.' + k + ' is set by the platform and cannot be changed') }}
 
-# The OAuth client (the former module oidc-dcr), registered by dynamic client
+# The OAuth client, registered by dynamic client
 # registration in dcr mode (global.okdp.oidc.clientProvisioning: dcr): the
 # compiler adds the chart oidc-dcr (Job <release>-oidc-dcr), which writes the
 # Secret platform.oidcClientSecret (<release>-<namespace>-dcr). Nothing in
@@ -288,11 +340,68 @@ oidcClients:
 
 # OKDP's own objects, rendered by the umbrella (okdp.objects.yaml): the hub
 # passwords, one ESO Password generator per key and the ExternalSecret
-# writing <release>-hub-generated (see generatedKeys).
+# writing <release>-hub-generated (see generatedKeys); the Role of the
+# PySpark sessions, its RoleBinding to their ServiceAccount and the bounds
+# of their pods.
 objects:
   - $spread: >-
       ${{ okdpGeneratedSecret({'name': hubGenerated, 'type': 'Opaque', 'keys': generatedKeys,
           'annotations': {'helm.sh/resource-policy': 'keep', 'argocd.argoproj.io/sync-options': 'Delete=false'}}) }}
+  # What Spark on Kubernetes (client mode) needs of its driver: its executors'
+  # pods, their configmaps and on-demand volumes, the events. No secrets: the
+  # executors mount the CA bundle and the S3 identities by reference. No
+  # patch and no Services: the platform's okdp-pod-bounds bounds an update
+  # to the objects Spark labelled and never lets an image change, but the
+  # Role is the only line where the policy is not installed, and a driver
+  # that cannot patch cannot repoint a pod of the namespace.
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata:
+      name: ${{ sparkServiceAccount }}
+      labels: ${{ labels }}
+    rules:
+      # No patch, no services: a client-mode driver creates and deletes its
+      # executors' pods, their configmaps and on-demand volumes, and changes
+      # none of them, nor makes a Service (the pods it reaches by the
+      # notebook's address, spark.driver.host). The platform's okdp-pod-bounds
+      # still bounds a delete to the objects Spark labelled spark-app-selector.
+      - apiGroups: [""]
+        resources: ["pods", "configmaps", "persistentvolumeclaims"]
+        verbs: ["get", "list", "watch", "create", "delete", "deletecollection"]
+      - apiGroups: [""]
+        resources: ["pods/log", "events"]
+        verbs: ["get", "list", "watch"]
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      name: ${{ sparkServiceAccount }}
+      labels: ${{ labels }}
+    subjects:
+      - kind: ServiceAccount
+        name: ${{ sparkServiceAccount }}
+        namespace: ${{ release.namespace }}
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: Role
+      name: ${{ sparkServiceAccount }}
+  # The bounds of the pods the PySpark sessions create, the param of the
+  # platform's ValidatingAdmissionPolicy okdp-pod-bounds (cluster-scoped, no
+  # project's: README, Notebook security), inert without it: they run as
+  # <release>-spark and read no Secret but the CA bundle and the S3
+  # identities the notebook holds already.
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: ${{ okdpFullname('spark-pod-bounds') }}
+      labels:
+        $merge: ${{ labels }}
+        okdp.io/pod-bounds: "true"
+    data:
+      serviceAccount: ${{ sparkServiceAccount }}
+      secrets: ${{ ([caBundle, s3Secret] + pyspark.map(c, c.s3SecretRef)).filter(x, x != '').join(',') }}
+      # The claims by name prefix, none by default; ownerLabel is the policy's
+      # (Spark's spark-app-selector).
+      pvcPrefixes: ${{ sparkPvcPrefixes.join(',') }}
 
 # okdp.info.yaml: a UI, no provided connection.
 instance:

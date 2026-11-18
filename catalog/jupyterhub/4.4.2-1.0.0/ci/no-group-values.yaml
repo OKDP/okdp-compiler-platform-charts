@@ -1,0 +1,5 @@
+# error: jupyterhub: no group may sign in
+# No group has a role and no allowed_groups is given: the hub would answer
+# 403 to everyone.
+storage: demo-storage
+s3SecretRef: creds-jupyterhub-s3

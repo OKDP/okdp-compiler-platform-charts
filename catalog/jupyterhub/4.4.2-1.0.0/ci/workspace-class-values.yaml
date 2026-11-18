@@ -1,0 +1,4 @@
+# The notebooks' homes (singleuser.storage.dynamic.storageClass) and the hub
+# database on the platform's workspace class, local-path
+# (workspace-class-platform.yaml); the project's bucket lake, a named claim.
+storage: lake

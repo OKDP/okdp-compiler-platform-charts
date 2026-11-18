@@ -1,0 +1,6 @@
+# The file browser on the project's bucket lake, a named claim
+# (named-claim-project.yaml): its identity the claim's credentials Secret
+# (no s3SecretRef).
+storage: lake
+fileBrowserLocations:
+  - {name: lake, uri: s3://demo.lake}

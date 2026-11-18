@@ -2,8 +2,7 @@
 # ${namespace}, NAMESPACE in sparkDefaults; ${connection}, ${storage.region}
 # in the properties of a PySpark connection, $(S3_ACCESS_KEY) without its own
 # identity; Spark's own ${env:...} left as written), and upstream values:
-# a profile, a volume and a hub role appended, an env variable added, a
-# workload identity on the spark ServiceAccount.
+# a profile, a volume and a hub role appended, an env variable added.
 storage: demo-storage
 s3SecretRef: creds-jupyterhub-s3
 pyspark: [lakehouse-eu]
@@ -36,6 +35,3 @@ upstream:
       profileList:
         - display_name: Minimal
           kubespawner_override: {image: quay.io/jupyter/minimal-notebook}
-  spark-rbac:
-    serviceAccount:
-      annotations: {eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/spark"}

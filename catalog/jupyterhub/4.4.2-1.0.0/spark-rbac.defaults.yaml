@@ -1,9 +1,14 @@
 # OKDP's defaults of the spark-rbac chart, over its values.yaml and under the
 # values computed by values.cel.yaml (okdp.yaml defaults). Plain YAML, read as
-# a Helm values file. The spark ServiceAccount the notebooks run as.
+# a Helm values file. The ServiceAccount <release>-spark of the PySpark
+# sessions alone (values.cel.yaml names it), without a token unless a pod
+# asks for one (the PySpark profile does, its executors do not). No Role
+# nor RoleBinding of the chart: its RoleBinding binds spark-role, which reads
+# the namespace's Secrets, to every ServiceAccount of the namespace (the
+# group system:serviceaccounts:<namespace>). The Role of the sessions, without
+# secrets, is OKDP's (okdp.yaml objects).
 rbac:
-  create: true
+  create: false
 serviceAccount:
   create: true
-  name: spark
-  automount: true
+  automount: false

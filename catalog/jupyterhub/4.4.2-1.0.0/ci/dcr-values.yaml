@@ -17,7 +17,7 @@ sparkConnections:
   - name: silver
     properties: |
       spark.sql.catalog.silver=org.apache.iceberg.spark.SparkCatalog
-      spark.sql.catalog.silver.uri=https://polaris-demo.${suffix}/api/catalog
+      spark.sql.catalog.silver.uri=https://polaris.demo.${suffix}/api/catalog
       spark.sql.catalog.silver.oauth2-server-uri=${oidc.tokenUrl}
 sparkDefaults:
   spark.eventLog.enabled: true
@@ -26,4 +26,4 @@ oidcRoleMapping:
   allowed_groups: [platform_admin, data_engineer]
   admin_groups: [platform_admin]
 welcomeNotebook: |
-  {"cells": [{"cell_type": "markdown", "metadata": {}, "source": ["[Sync](https://jupyterhub-demo.${suffix}/hub/user-redirect/git-pull?repo=x) ${literal}"]}], "metadata": {}, "nbformat": 4, "nbformat_minor": 5}
+  {"cells": [{"cell_type": "markdown", "metadata": {}, "source": ["[Sync](https://jupyterhub.demo.${suffix}/hub/user-redirect/git-pull?repo=x) ${literal}"]}], "metadata": {}, "nbformat": 4, "nbformat_minor": 5}

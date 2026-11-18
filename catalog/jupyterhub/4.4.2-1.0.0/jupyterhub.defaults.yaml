@@ -30,12 +30,13 @@ hub:
       refresh_pre_spawn: true
   # No JupyterHub service: their api tokens would be generated with lookup too.
   services: {}
+  # Ingress from the proxy and the notebooks only (the pods labelled
+  # hub.jupyter.org/network-access-hub), where the CNI enforces it.
   networkPolicy:
-    enabled: false
+    enabled: true
   extraConfig:
     extraConfig01.py: |
       c.KubeSpawner.delete_grace_period = 120
-      c.ServerApp.allow_root = True
   image:
     pullPolicy: Always
     pullSecrets: []
@@ -85,12 +86,10 @@ singleuser:
 
   startTimeout: 600
 
+  # The notebooks run as the image's user jovyan (uid 1000, group users), never
+  # root: no NB_USER, NB_UID or CHOWN_HOME, which the image's start.sh applies
+  # only when started as root.
   extraEnv:
-    NB_USER: "$(JUPYTERHUB_USER)"
-    NB_UID: "1001"
-    NB_GID: "100"
-    CHOWN_HOME: "yes"
-    CHOWN_HOME_OPTS: "-R"
     JUPYTER_ENABLE_LAB: "yes"
     EDITOR: "vim"
     GIT_SSL_NO_VERIFY: "false"
@@ -100,10 +99,6 @@ singleuser:
     # site-packages: overriding PYTHONPATH outright hides it, and the
     # PySpark kernel then fails on "No module named pyspark".
     PYTHONPATH: "/etc/jupyter/auth:/usr/local/spark/python:/usr/local/spark/python/lib/py4j-0.10.9.7-src.zip"
-    AWS_CA_BUNDLE: /cacerts/ca.crt
-    REQUESTS_CA_BUNDLE: /cacerts/ca.crt
-    CURL_CA_BUNDLE: /cacerts/ca.crt
-    SSL_CERT_FILE: /cacerts/ca.crt
     TRUSTSTORE_PASSWORD: ""
 
   extraFiles:
@@ -144,29 +139,41 @@ singleuser:
         builtins.access_token = _fresh_access_token
         builtins.me = _current_user
 
-  serviceAccountName: spark
+  # No singleuser.serviceAccountName: a notebook mounts no ServiceAccount
+  # token (KubeSpawner mounts one only for a ServiceAccount it is given). The
+  # PySpark profile alone runs as <release>-spark, whose Role has no secrets
+  # verbs (values.cel.yaml, okdp.yaml objects).
   storage:
-    homeMountPath: "/home/{username}"
-    dynamic:
-      storageClass: standard
+    # The home of the image's user; its PVC follows
+    # global.okdp.storageClass.workspace (values.cel.yaml).
+    homeMountPath: /home/jovyan
     type: dynamic
-    extraVolumes:
-      - name: cacerts
-        secret:
-          secretName: certs-bundle
-    extraVolumeMounts:
-      - name: cacerts
-        mountPath: /cacerts
-        readOnly: true
+  # The iptables rule of z2jh needs a privileged NET_ADMIN init container,
+  # which the Pod Security level of a project's namespace (enforce: baseline)
+  # refuses: the NetworkPolicy below blocks the cloud metadata server instead
+  # (egressAllowRules.cloudMetadataServer: false, the chart's default).
   cloudMetadata:
     blockWithIptables: false
-  uid: 0
+  uid: 1000
   fsGid: 100
   extraPodConfig:
-    automount_service_account_token: true
     terminationGracePeriodSeconds: 120
+  # Ingress from the hub and the proxy, and from the PySpark sessions'
+  # executors of the namespace (label spark-role: executor) to their driver,
+  # the notebook. Egress: DNS, the internet and the cluster's private
+  # networks (the API server for the PySpark sessions, the object store,
+  # Trino, Polaris and the identity provider behind the ingress), never the
+  # cloud metadata server.
   networkPolicy:
-    enabled: false
+    enabled: true
+    ingress:
+      - from:
+          - podSelector:
+              matchLabels:
+                spark-role: executor
+    egressAllowRules:
+      cloudMetadataServer: false
+      privateIPs: true
 
 prePuller:
   hook:
