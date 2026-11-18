@@ -1,0 +1,6 @@
+# The connections of the case claims: the instance's own (connections.yaml, level 2).
+connections:
+  shared-trino:
+    contract: trino
+    url: https://trino.example.com
+    uri: trino://trino@trino.example.com:443

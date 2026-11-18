@@ -1,0 +1,14 @@
+# The connections of the case newline-trino-catalog: the instance's own (connections.yaml, level 2).
+connections:
+  meta:
+    contract: database-server
+    engine: postgresql
+    host: pg.db.svc
+    port: 5432
+    dbName: superset
+    secretRef: {name: pg-superset}
+  shared-trino:
+    contract: trino
+    url: https://trino.example.com
+    uri: trino://trino@trino.example.com:443
+    catalogs: ["sales", "bronze\nSQLALCHEMY_DATABASE_URI=x"]

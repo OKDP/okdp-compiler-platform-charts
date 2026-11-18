@@ -1,0 +1,3 @@
+# The trino of the project: its trino output trino.
+service: trino
+version: 480.0.0-1.0.0

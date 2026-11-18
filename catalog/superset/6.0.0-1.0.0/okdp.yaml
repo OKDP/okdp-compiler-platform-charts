@@ -1,36 +1,44 @@
 # OKDP's part of superset: the platform values it needs, OKDP's defaults of
 # the Apache Superset chart and what an instance may override; then the
-# mapping besides the chart's values (values.cel.yaml): its OAuth client (the
-# former module oidc-dcr), OKDP's own objects (the env Secrets, the Valkey
-# cache, the generated Secrets) and what the instance publishes.
+# mapping besides the chart's values (values.cel.yaml): its OAuth client,
+# OKDP's own objects (the Valkey cache, the
+# generated Secrets) and what the instance publishes.
 # ${{ ... }} is a CEL expression; the {{ ... }} template code meant for the
 # Superset chart's tpl and the shell's $VAR stay literal.
 #
-# The former module rendered OKDP's superset chart
-# (quay.io/okdp/charts/superset 0.15.2-2.0), a wrapper around the Apache chart
-# with its own env Secrets and Python config overrides. That wrapper is folded
-# in here: its defaults are part of the superset values (fixed ones in
-# superset.defaults.yaml), its env Secrets are objects below (same names and
-# keys, read by the Python config and the init containers).
+# OKDP's superset wrapper chart (quay.io/okdp/charts/superset 0.15.2-2.0, a
+# wrapper around the Apache chart with its own env Secrets and Python config
+# overrides) is not used: it is folded in here, its defaults are part of the
+# superset values (fixed ones in
+# superset.defaults.yaml), its env Secrets are the environment of the pods
+# (extraEnv, the same keys, read by the Python config) and the chart's own
+# env Secret (secretEnv: the database and cache settings); every credential
+# is read from a Secret (extraEnvRaw, secretKeyRef), never written.
 
 roles: [dataviz]
 dependsOn: [database-server, ingress]
 require:
   - ingress.suffix
   - ingress.className
-  - certificateIssuers.selfSigned.name
+  - tls.clusterIssuer
   - oidc.issuerUri
 defaults:
   superset: superset.defaults.yaml
 upstream:
   superset:
     # What the platform relies on: the names (fullnameOverride, the env and
-    # config Secrets the pods read), the configOverrides blocks carrying OIDC
-    # sign-in, the Trino OAuth2, the Valkey password, the examples and the
-    # proxy fix the redirect_uri depends on, the metadata database (its URI is
-    # built from the DB_* env of the env Secrets) and the cache connection to
-    # the Valkey of the objects below (the bundled postgresql and redis charts
-    # are off: redis reads its previous password with lookup), the local admin
+    # config Secrets the pods read), the platform's variables of extraEnv
+    # (the sign-in, the Trino OAuth2 and the examples settings; an instance
+    # adds variables of its own there or in extraEnvRaw), extraSecretEnv
+    # (literal values in the chart's env Secret: an instance loads its own
+    # Secret with envFromSecrets, or a secretKeyRef of extraEnvRaw), the
+    # configOverrides blocks carrying OIDC sign-in, the Trino OAuth2, the
+    # Valkey password, the examples and the proxy fix the redirect_uri
+    # depends on, the metadata database (its settings in the chart's env
+    # Secret, secretEnv and database; its credentials read from the
+    # connection's Secret) and the cache connection to the Valkey of the
+    # objects below (the bundled postgresql and redis charts are off: redis
+    # reads its previous password with lookup), the local admin
     # creation (createAdmin writes the password into the init script; the
     # mapping creates it from a Secret), forceReload (a randAlphaNum pod
     # annotation, a new value at each render: Flux and Argo CD would never
@@ -43,37 +51,137 @@ upstream:
     # extraConfigs.import_datasources.yaml follows `datasources` unless an
     # instance replaces it: deliberately not protected (it could be, as
     # extraConfigs["import_datasources.yaml"]), as in okdp-lib-chart.
-    protect: [fullnameOverride, envFromSecret, configFromSecret,
+    protect: [fullnameOverride, envFromSecret, configFromSecret, secretEnv, extraSecretEnv,
+              extraEnv.SUPERSET_DOMAIN, 'extraEnv["AUTH_OAUTH_*"]', 'extraEnv["TRINO_*"]',
+              extraEnv.SUPERSET_LOAD_EXAMPLES, extraEnv.SQLALCHEMY_EXAMPLES_URI,
               configOverrides.auth_registration, configOverrides.oauth_enabled,
               configOverrides.trino_oauth_enabled, configOverrides.custom_sso_security_manager,
               configOverrides.extra_config, configOverrides.load_examples,
-              configOverrides.valkey_password, configOverridesFiles,
-              config.resultsBackend, database.uri, database.driver,
+              configOverrides.valkey_password, configOverrides.guest_token,
+              configOverridesFiles,
+              config.resultsBackend, database.uri, database.driver, database.host,
+              database.port, database.name, database.user, database.password,
               cache.enabled, cache.host, cache.port, cache.user, cache.password,
               cache.cacheUrl, cache.celeryUrl, cache.cacheDb, cache.celeryDb,
               postgresql, redis, init.createAdmin, init.adminUser, init.command,
               supersetNode.forceReload, supersetWorker.forceReload,
               supersetCeleryBeat.forceReload, supersetMcp.forceReload,
               ingress.enabled, ingress.ingressClassName, ingress.hosts, ingress.tls]
-    # The lists carrying the platform's env Secrets, credentials, CA bundle and
-    # wait init containers: an instance adds to them.
+    # The lists carrying the platform's credentials, CA bundle and wait init
+    # containers, and the env Secrets an instance loads: an instance adds to
+    # them.
     append: [envFromSecrets, extraEnvRaw, extraVolumes, extraVolumeMounts,
              init.initContainers, supersetNode.initContainers, supersetWorker.initContainers]
 
 vars:
-  host: superset-${{ release.namespace }}.${{ global.okdp.ingress.suffix }}
-  # Generated secret: superset_secret_key and redis-password (the Valkey password).
+  # The platform's CA bundle, the Secret global.okdp.tls.caBundleSecret ("":
+  # none, the platform's certificates chain to a public CA).
+  caBundle: ${{ global.okdp.?tls.?caBundleSecret.orValue('') }}
+  # Instance name: the release name without its project prefix (the console
+  # prefixes instances with their project, which would double it in the
+  # host).
+  instance: >-
+    ${{ release.name.startsWith(release.namespace + '-')
+        ? release.name.substring(size(release.namespace) + 1) : release.name }}
+  # Public host: <instance>.<namespace>.<ingress suffix>.
+  host: ${{ instance }}.${{ release.namespace }}.${{ global.okdp.ingress.suffix }}
+  # Generated secret: superset_secret_key, guest-token-secret (embedded
+  # dashboards) and redis-password (the Valkey password).
   internalSecret: ${{ release.name }}-internal
   # Generated secret of the local admin (key password), only without OIDC.
   adminSecret: ${{ release.name }}-admin
   # The Valkey cache and Celery broker, named redis as the env it is read from.
   redis: ${{ release.name }}-redis
+  # The Valkey Deployment and Service, by okdpWebWorkload (the compiler's
+  # hardened web workload: non-root, seccomp RuntimeDefault, no privilege
+  # escalation, every capability dropped, a read-only root filesystem, no
+  # ServiceAccount token), the Service on 6379 named <release>-redis.
+  valkey:
+    component: redis
+    name: ${{ redis }}
+    port: redis
+    servicePort: 6379
+    strategy: Recreate
+    pod:
+      runAsUser: 999
+      runAsGroup: 1000
+      fsGroup: 1000
+      containers:
+        - name: valkey
+          image: docker.io/valkey/valkey:9.1.2-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
+          imagePullPolicy: IfNotPresent
+          command:
+            - valkey-server
+            - --requirepass
+            - $(REDIS_PASSWORD)
+            - --save
+            - ""
+            - --appendonly
+            - "no"
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ${{ internalSecret }}
+                  key: redis-password
+            # valkey-cli reads it (probes).
+            - name: VALKEYCLI_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: ${{ internalSecret }}
+                  key: redis-password
+          ports:
+            - name: redis
+              containerPort: 6379
+          readinessProbe:
+            exec:
+              command: ["valkey-cli", "ping"]
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: redis
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir: {}
   oidcBaseUrl: ${{ global.okdp.oidc.issuerUri }}/protocol/openid-connect
+  # Who signs in: the groups of the project and of the platform's
+  # administrators, and those of oidcRoleMapping. Anyone else of the realm
+  # is refused at the sign-in (CustomSsoSecurityManager).
+  allowedGroups: >-
+    ${{ (platform.access.viewers + values.?oidcRoleMapping.orValue({}).map(k, k)).sort().distinct() }}
   # dcr mode: one client for the sign-in and the Trino datasources (both
   # redirect URIs).
   trinoOauthSecret: >-
     ${{ platform.oidc.dcr.enabled ? platform.oidcClientSecret : 'creds-' + release.name + '-oauth2-trino' }}
   insecureSkipVerify: ${{ platform.oidc.?insecureSkipVerify.orValue(false) }}
+  # The OAuth2 settings of the sign-in and of the Trino datasources, in the
+  # environment of every pod (extraEnv, values.cel.yaml) with OIDC; the
+  # client credentials are secretKeyRefs (extraEnvRaw).
+  # AUTH_OAUTH_SSL_CERTIFICATE_VERIFY: verified against REQUESTS_CA_BUNDLE
+  # (the platform's CA bundle, mounted at /cacerts), else the image's CAs.
+  oidcEnv: >-
+    ${{ !platform.oidc.enabled ? {} : {
+      'AUTH_OAUTH_ALLOWED_GROUPS': allowedGroups.join(','),
+      'AUTH_OAUTH_BASE_URL': oidcBaseUrl,
+      'AUTH_OAUTH_PROVIDER': first([platform.oidc.?displayName.orValue(''), 'keycloak']),
+      'AUTH_OAUTH_SCOPE': platform.oidc.scope,
+      'AUTH_OAUTH_SSL_CERTIFICATE_VERIFY': insecureSkipVerify ? 'false' : 'true',
+      'AUTH_OAUTH_USE_PKCE': platform.oidc.?usePKCE.orValue(true) ? 'S256' : 'None',
+      'TRINO_AUTH_OAUTH_BASE_URL': oidcBaseUrl,
+      'TRINO_OAUTH_SCOPE': platform.oidc.scope
+    } }}
   # Parameters a values layer may set to null (Helm's `| default`).
   locale: ${{ str(values.?locale.orValue('')) }}
   currency: ${{ str(values.?currency.orValue('')) }}
@@ -130,9 +238,10 @@ vars:
       echo "databases reachable"
 
   # The wait init containers of the Superset pods: the Apache default, reading
-  # the database (and cache) host and port from the env Secrets. Their image is
-  # template code for the upstream chart, which passes initContainers to tpl:
-  # the Superset image.
+  # the database (and cache) host and port from the chart's env Secret
+  # (<release>-env: the database and cache settings, no credential). Their
+  # image is template code for the upstream chart, which passes
+  # initContainers to tpl: the Superset image.
   waitFor: |
     SECONDS=0
     wait_for() {
@@ -159,10 +268,7 @@ vars:
       imagePullPolicy: "{{ .Values.image.pullPolicy }}"
       envFrom:
         - secretRef:
-            name: ${{ release.name }}-db-env
-        - $if: ${{ redisToo }}
-          secretRef:
-            name: ${{ release.name }}-redis-env
+            name: ${{ release.name }}-env
       command:
         - /bin/bash
         - -c
@@ -182,22 +288,23 @@ vars:
     argocd.argoproj.io/sync-options: Delete=false
 
 errors:
-  # The metadata database is required, and Superset reads its credentials
-  # from the connection's Secret.
+  # Nobody could sign in: no group of the project and no oidcRoleMapping.
+  - $if: ${{ platform.oidc.enabled && allowedGroups.size() == 0 }}
+    $value: "superset: no group may sign in: the project's access gives no group a role and oidcRoleMapping names none (global.okdp.access.admins, the platform's administrators, are none either)"
+  # The metadata database is required, and the examples one with the
+  # examples on; Superset reads their credentials from the connection's
+  # Secret, which each reference requires, with the postgresql engine
+  # (require).
   - $if: ${{ type(values.metadataDb) != map }}
     $value: "superset: metadataDb: no database-server connection given"
-  - $if: ${{ type(values.metadataDb) == map && !has(values.metadataDb.secretRef) }}
-    $value: 'superset: metadataDb: connection "${{ values.metadataDb.okdp.ref }}" has no secretRef: Superset needs a Secret with the keys username and password'
   - $if: ${{ values.load_examples && type(values.examplesDb) != map }}
     $value: "superset: examplesDb: no database-server connection given"
-  - $if: ${{ values.load_examples && type(values.examplesDb) == map && !has(values.examplesDb.secretRef) }}
-    $value: 'superset: examplesDb: connection "${{ values.examplesDb.okdp.ref }}" has no secretRef: the examples loader needs a Secret with the keys username and password'
   - $for: "i in lists.range(datasources.size())"
     $each:
       $if: ${{ type(datasources[i].?trino.orValue('')) != map }}
       $value: "superset: datasources[${{ i }}].trino: no trino connection given"
 
-# The OAuth client (the former module oidc-dcr), registered by dynamic client
+# The OAuth client, registered by dynamic client
 # registration in dcr mode (global.okdp.oidc.clientProvisioning: dcr): the
 # compiler adds the chart oidc-dcr (Job <release>-oidc-dcr), which writes the
 # Secret platform.oidcClientSecret (<release>-<namespace>-dcr). Nothing in
@@ -209,185 +316,27 @@ oidcClients:
       - https://${{ host }}/api/v1/database/oauth2/
     grantTypes: [authorization_code, refresh_token]
 
-# OKDP's own objects, rendered by the umbrella (okdp.objects.yaml).
+# OKDP's own objects, rendered by the umbrella (okdp.objects.yaml). No env
+# Secret here: the env Secrets OKDP's wrapper chart rendered
+# (<release>-db-env, -oauth2-env, -redis-env, -superset-env,
+# -trino-oauth2-env) held settings, no credential, and a Secret of literal
+# values is no object of a package. They are the environment of the pods
+# (extraEnv) and the chart's own env Secret (secretEnv), values.cel.yaml.
 objects:
-  # The env Secrets the Superset pods load (envFromSecret, envFromSecrets)
-  # and the Python config reads, formerly rendered by OKDP's wrapper chart
-  # (quay.io/okdp/charts/superset) from its `okdp:` values: <release>-db-env,
-  # -oauth2-env, -redis-env, -superset-env, -trino-oauth2-env. No
-  # credential: those are secretKeyRefs (extraEnvRaw).
-  - apiVersion: v1
-    kind: Secret
-    metadata:
-      name: ${{ release.name }}-db-env
-      labels: ${{ labels }}
-    type: Opaque
-    stringData:
-      DB_HOST: ${{ str(values.metadataDb.host) }}
-      DB_PORT: ${{ str(values.metadataDb.port) }}
-      DB_NAME: ${{ str(values.metadataDb.dbName) }}
-  - apiVersion: v1
-    kind: Secret
-    metadata:
-      name: ${{ release.name }}-oauth2-env
-      labels: ${{ labels }}
-    type: Opaque
-    stringData:
-      AUTH_OAUTH_ENABLED: ${{ str(platform.oidc.enabled) }}
-      # AUTH_OAUTH_SSL_CERTIFICATE_VERIFY: verified against
-      # REQUESTS_CA_BUNDLE (certs-bundle, mounted at /cacerts).
-      $merge: >-
-        ${{ !platform.oidc.enabled ? {} : {
-          'AUTH_OAUTH_BASE_URL': oidcBaseUrl,
-          'AUTH_OAUTH_PROVIDER': first([platform.oidc.?displayName.orValue(''), 'keycloak']),
-          'AUTH_OAUTH_SCOPE': platform.oidc.scope,
-          'AUTH_OAUTH_SSL_CERTIFICATE_VERIFY': insecureSkipVerify ? 'false' : 'true',
-          'AUTH_OAUTH_USE_PKCE': platform.oidc.?usePKCE.orValue(true) ? 'S256' : 'None',
-          'SUPERSET_DOMAIN': host
-        } }}
-  - apiVersion: v1
-    kind: Secret
-    metadata:
-      name: ${{ release.name }}-redis-env
-      labels: ${{ labels }}
-    type: Opaque
-    stringData:
-      REDIS_HOST: ${{ redis }}
-      REDIS_PORT: "6379"
-      REDIS_PROTO: "redis"
-      REDIS_DB: "1"
-      REDIS_CELERY_DB: "0"
-  - apiVersion: v1
-    kind: Secret
-    metadata:
-      name: ${{ release.name }}-superset-env
-      labels: ${{ labels }}
-    type: Opaque
-    stringData:
-      SUPERSET_LOAD_EXAMPLES: ${{ str(values.load_examples) }}
-      # The examples loader is postgresql specific (psycopg2 dialect, main search_path).
-      $merge: >-
-        ${{ !values.load_examples ? {} : {
-          'SQLALCHEMY_EXAMPLES_URI': 'postgresql+psycopg2://$DB_EXAMPLES_USER:$DB_EXAMPLES_PASS@' + str(values.examplesDb.host)
-            + ':' + str(values.examplesDb.port) + '/' + str(values.examplesDb.dbName) + '?options=-csearch_path%3Dmain'
-        } }}
-  - apiVersion: v1
-    kind: Secret
-    metadata:
-      name: ${{ release.name }}-trino-oauth2-env
-      labels: ${{ labels }}
-    type: Opaque
-    stringData:
-      TRINO_OAUTH_ENABLED: ${{ str(platform.oidc.enabled) }}
-      $merge: >-
-        ${{ !platform.oidc.enabled ? {} : {
-          'TRINO_AUTH_OAUTH_BASE_URL': oidcBaseUrl,
-          'TRINO_OAUTH_SCOPE': platform.oidc.scope,
-          'SUPERSET_DOMAIN': host
-        } }}
-
   # Valkey: Superset's cache and Celery broker (the Valkey project image
-  # valkey/valkey, BSD-3-Clause). Replaces the bitnami redis chart the
+  # valkey/valkey, BSD-3-Clause, by digest). Replaces the bitnami redis chart the
   # Superset chart bundles (a standalone master, the only use made of it):
   # that chart reads its previous password with `lookup`, and the bitnami
   # images it pins are no longer published. The Service keeps the name
-  # <release>-redis and the pods read it from the REDIS_* env (the
-  # redis-env Secret). No persistence: the cache and the Celery queue are
+  # <release>-redis and the pods read it from the REDIS_* env (the chart's
+  # env Secret, cache.host). No persistence: the cache and the Celery queue are
   # rebuilt after a restart.
-  - apiVersion: apps/v1
-    kind: Deployment
-    metadata:
-      name: ${{ redis }}
-      labels: ${{ okdpLabels('redis') }}
-    spec:
-      replicas: 1
-      strategy:
-        type: Recreate
-      selector:
-        matchLabels: ${{ okdpSelectorLabels('redis') }}
-      template:
-        metadata:
-          labels: ${{ okdpLabels('redis') }}
-        spec:
-          automountServiceAccountToken: false
-          securityContext:
-            runAsNonRoot: true
-            runAsUser: 999
-            runAsGroup: 1000
-            fsGroup: 1000
-            seccompProfile:
-              type: RuntimeDefault
-          containers:
-            - name: valkey
-              image: docker.io/valkey/valkey:9.1.2-alpine
-              imagePullPolicy: IfNotPresent
-              command:
-                - valkey-server
-                - --requirepass
-                - $(REDIS_PASSWORD)
-                - --save
-                - ""
-                - --appendonly
-                - "no"
-              env:
-                - name: REDIS_PASSWORD
-                  valueFrom:
-                    secretKeyRef:
-                      name: ${{ internalSecret }}
-                      key: redis-password
-                # valkey-cli reads it (probes).
-                - name: VALKEYCLI_AUTH
-                  valueFrom:
-                    secretKeyRef:
-                      name: ${{ internalSecret }}
-                      key: redis-password
-              ports:
-                - name: redis
-                  containerPort: 6379
-              readinessProbe:
-                exec:
-                  command: ["valkey-cli", "ping"]
-                periodSeconds: 5
-              livenessProbe:
-                tcpSocket:
-                  port: redis
-                initialDelaySeconds: 10
-                periodSeconds: 15
-              resources:
-                requests:
-                  cpu: 50m
-                  memory: 64Mi
-                limits:
-                  cpu: 500m
-                  memory: 512Mi
-              securityContext:
-                allowPrivilegeEscalation: false
-                readOnlyRootFilesystem: true
-                capabilities:
-                  drop: ["ALL"]
-              volumeMounts:
-                - name: data
-                  mountPath: /data
-          volumes:
-            - name: data
-              emptyDir: {}
-  - apiVersion: v1
-    kind: Service
-    metadata:
-      name: ${{ redis }}
-      labels: ${{ okdpLabels('redis') }}
-    spec:
-      type: ClusterIP
-      ports:
-        - name: redis
-          port: 6379
-          targetPort: redis
-      selector: ${{ okdpSelectorLabels('redis') }}
+  - $spread: ${{ okdpWebWorkload(valkey) }}
 
   # The generated Secrets (okdpGeneratedSecret): one ESO Password generator
   # per key, and the ExternalSecret writing the Secret, generated once
   # (refreshInterval 0), kept on uninstall (keep):
-  # - former module internal-secrets (a StringSecret): the Flask secret key and
+  # - the internal Secret: the Flask secret key and
   #   the Redis password. The password is alphanumeric: it lands in a redis://
   #   URL. The database outlives the release and its rows are encrypted with
   #   superset_secret_key;
@@ -398,7 +347,8 @@ objects:
   #     kubectl get secret <release>-admin -o jsonpath='{.data.password}' | base64 -d
   - $spread: >-
       ${{ okdpGeneratedSecret({'name': internalSecret, 'annotations': keep, 'keys': [
-            {'key': 'superset_secret_key', 'length': 42}, {'key': 'redis-password', 'length': 32}]}) }}
+            {'key': 'superset_secret_key', 'length': 42}, {'key': 'guest-token-secret', 'length': 42},
+            {'key': 'redis-password', 'length': 32}]}) }}
   - $spread: >-
       ${{ platform.oidc.enabled ? [] : okdpGeneratedSecret({'name': adminSecret, 'annotations': keep,
             'keys': [{'key': 'password', 'length': 24}]}) }}

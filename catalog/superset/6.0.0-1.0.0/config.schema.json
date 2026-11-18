@@ -5,18 +5,32 @@
   "properties": {
     "global": {
       "type": "object",
-      "description": "Platform values: the context (platform/platform-values.yaml, global.okdp), never an instance's."
+      "description": "Platform values (global.okdp): the context's layers, the platform's (platform.yaml) then its project's (project.yaml), never an instance's."
     },
     "metadataDb": {
-      "type": "string",
+      "type": [
+        "string",
+        "object"
+      ],
       "title": "Metadata database",
-      "description": "Connection to the SQL database hosting the Superset metadata. Its credentials Secret holds the keys username and password.",
+      "description": "The PostgreSQL database hosting the Superset metadata: a database of its own by default ({}, a claim of the default class of database-server connections), a claim written out ({class: <class>} or {provider: <namespace>/<instance>}), or the name of a connection, of an output of another instance of the namespace, or of a named claim of the project. Required of it: the postgresql engine and its credentials Secret (secretRef: username, password).",
       "x-okdp-connection-ref": {
-        "contract": "database-server"
+        "contract": "database-server",
+        "provision": true,
+        "require": {
+          "properties": {
+            "engine": {
+              "const": "postgresql"
+            }
+          },
+          "required": [
+            "secretRef"
+          ]
+        }
       },
       "x-ui-group": "Cluster",
       "x-ui-order": 1,
-      "default": ""
+      "default": {}
     },
     "load_examples": {
       "type": "boolean",
@@ -27,11 +41,25 @@
       "x-ui-order": 2
     },
     "examplesDb": {
-      "type": "string",
+      "type": [
+        "string",
+        "object"
+      ],
       "title": "Examples database",
-      "description": "Connection to the PostgreSQL database receiving the Superset examples (used when Load examples is on).",
+      "description": "The PostgreSQL database receiving the Superset examples (used when Load examples is on): a claim, a database of its own ({}, {class: <class>}), or the name of a connection, of an output of another instance of the namespace, or of a named claim of the project. Required of it: the postgresql engine and its credentials Secret (secretRef: username, password).",
       "x-okdp-connection-ref": {
-        "contract": "database-server"
+        "contract": "database-server",
+        "provision": true,
+        "require": {
+          "properties": {
+            "engine": {
+              "const": "postgresql"
+            }
+          },
+          "required": [
+            "secretRef"
+          ]
+        }
       },
       "x-ui-group": "Cluster",
       "x-ui-order": 3,
@@ -193,7 +221,7 @@
         "superset": {
           "type": "object",
           "title": "superset",
-          "description": "Values of the superset chart 0.22.8 (https://apache.github.io/superset), for example image, resources, nodeSelector, tolerations, supersetWorker.replicas.replicaCount, extraEnv, new configOverrides blocks (Python appended to superset_config.py, after the chart's). Refused: fullnameOverride, envFromSecret, configFromSecret, configOverrides auth_registration/oauth_enabled/trino_oauth_enabled/custom_sso_security_manager/extra_config/load_examples/valkey_password, configOverridesFiles, config.resultsBackend, database.uri/driver, cache.enabled/host/port/user/password/cacheUrl/celeryUrl/cacheDb/celeryDb, postgresql, redis, init.createAdmin/adminUser/command, supersetNode/supersetWorker/supersetCeleryBeat/supersetMcp forceReload, ingress.enabled/ingressClassName/hosts/tls. Appended to the lists this chart sets: envFromSecrets, extraEnvRaw, extraVolumes, extraVolumeMounts, init.initContainers, supersetNode.initContainers, supersetWorker.initContainers.",
+          "description": "Values of the superset chart 0.22.8 (https://apache.github.io/superset), for example image, resources, nodeSelector, tolerations, supersetWorker.replicas.replicaCount, extraEnv and extraEnvRaw (variables added to the pods; a credential is a secretKeyRef of extraEnvRaw, or a Secret of the instance loaded with envFromSecrets), new configOverrides blocks (Python appended to superset_config.py, after the chart's). Refused: fullnameOverride, envFromSecret, configFromSecret, secretEnv, extraSecretEnv (literal values in a Secret), the platform's variables of extraEnv (SUPERSET_DOMAIN, AUTH_OAUTH_*, TRINO_*, SUPERSET_LOAD_EXAMPLES, SQLALCHEMY_EXAMPLES_URI: the sign-in, the Trino OAuth2 and the examples settings), configOverrides auth_registration/oauth_enabled/trino_oauth_enabled/custom_sso_security_manager/extra_config/load_examples/valkey_password, configOverridesFiles, config.resultsBackend, database.uri/driver/host/port/name/user/password, cache.enabled/host/port/user/password/cacheUrl/celeryUrl/cacheDb/celeryDb, postgresql, redis, init.createAdmin/adminUser/command, supersetNode/supersetWorker/supersetCeleryBeat/supersetMcp forceReload, ingress.enabled/ingressClassName/hosts/tls. Appended to the lists this chart sets: envFromSecrets, extraEnvRaw, extraVolumes, extraVolumeMounts, init.initContainers, supersetNode.initContainers, supersetWorker.initContainers.",
           "default": {},
           "x-ui-widget": "yaml",
           "x-ui-order": 1,

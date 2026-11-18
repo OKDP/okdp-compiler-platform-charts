@@ -17,8 +17,8 @@ sources:
   - https://github.com/OKDP/platform-charts
   - https://github.com/apache/superset
 dependencies:
-  # Module main: the Apache Superset chart, OKDP's former wrapper chart folded
-  # into its values (superset.defaults.yaml, values.cel.yaml). Its bundled
+  # The Apache Superset chart, OKDP's settings folded into its values
+  # (superset.defaults.yaml, values.cel.yaml). Its bundled
   # bitnami charts, postgresql and redis, are disabled by values.
   - name: superset
     repository: https://apache.github.io/superset

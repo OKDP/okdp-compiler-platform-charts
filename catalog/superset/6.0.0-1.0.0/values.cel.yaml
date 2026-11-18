@@ -1,16 +1,36 @@
-# The values of the Apache Superset chart (the former KuboCD module main),
-# OKDP's former wrapper chart folded in. Keys left out keep the chart's
+# The values of the Apache Superset chart, OKDP's settings folded in. Keys left out keep the chart's
 # defaults or OKDP's (superset.defaults.yaml). They read the vars of
 # okdp.yaml (host, redis, internalSecret, waitContainers...).
 superset:
   fullnameOverride: ${{ release.name }}
-  # The env Secrets of okdp.yaml (objects).
-  envFromSecret: ${{ release.name }}-superset-env
-  envFromSecrets:
-    - ${{ release.name }}-db-env
-    - ${{ release.name }}-oauth2-env
-    - ${{ release.name }}-redis-env
-    - ${{ release.name }}-trino-oauth2-env
+  # The metadata database: the chart writes its settings, with the cache's
+  # (cache.host, the Valkey of okdp.yaml), in its env Secret <release>-env
+  # (secretEnv.create, superset.defaults.yaml), which every pod loads
+  # (envFromSecret, the chart's default). Its DB_USER and DB_PASS are the
+  # chart's placeholders: the credentials are read from the connection's
+  # Secret (extraEnvRaw, which wins over the Secret).
+  database:
+    host: ${{ str(values.metadataDb.host) }}
+    port: ${{ int(values.metadataDb.port) }}
+    name: ${{ str(values.metadataDb.dbName) }}
+  # The environment of every pod, the init Job's included, read by the
+  # Python config (superset.defaults.yaml): the sign-in and the Trino OAuth2
+  # settings (oidcEnv, with OIDC), the examples, the gunicorn workers; the
+  # platform's keys are protected, an instance adds its own. No credential:
+  # those are secretKeyRefs (extraEnvRaw).
+  extraEnv:
+    SERVER_WORKER_AMOUNT: ${{ str(values.workers) }}
+    SUPERSET_DOMAIN: ${{ host }}
+    AUTH_OAUTH_ENABLED: ${{ str(platform.oidc.enabled) }}
+    TRINO_OAUTH_ENABLED: ${{ str(platform.oidc.enabled) }}
+    SUPERSET_LOAD_EXAMPLES: ${{ str(values.load_examples) }}
+    # The examples loader is postgresql specific (psycopg2 dialect, main
+    # search_path); the Python config expands $DB_EXAMPLES_USER and
+    # $DB_EXAMPLES_PASS (os.path.expandvars) from the secretKeyRefs.
+    SQLALCHEMY_EXAMPLES_URI:
+      $if: ${{ values.load_examples }}
+      $value: postgresql+psycopg2://$DB_EXAMPLES_USER:$DB_EXAMPLES_PASS@${{ str(values.examplesDb.host) }}:${{ str(values.examplesDb.port) }}/${{ str(values.examplesDb.dbName) }}?options=-csearch_path%3Dmain
+    $merge: ${{ oidcEnv }}
 
   # Computed blocks of superset_config.py (the fixed ones: superset.defaults.yaml).
   configOverrides:
@@ -137,6 +157,12 @@ superset:
         secretKeyRef:
           name: ${{ values.metadataDb.secretRef.name }}
           key: password
+    # The key of the embedded dashboards' guest tokens.
+    - name: GUEST_TOKEN_JWT_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: ${{ internalSecret }}
+          key: guest-token-secret
     # Superset/Redis credentials
     - name: REDIS_PASSWORD
       valueFrom:
@@ -173,8 +199,9 @@ superset:
         secretKeyRef:
           name: ${{ adminSecret }}
           key: password
-    # CA
-    - name: REQUESTS_CA_BUNDLE
+    # The platform's CA bundle (caBundle), when set.
+    - $if: ${{ caBundle != '' }}
+      name: REQUESTS_CA_BUNDLE
       value: /cacerts/ca.crt
     - $spread: >-
         ${{ ['HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY'].filter(k, k in platform.proxyEnv).map(k, {'name': k, 'value': platform.proxyEnv[k]}) }}
@@ -226,8 +253,9 @@ superset:
               --lastname Admin --email admin@superset.com --password "$SUPERSET_ADMIN_PASSWORD"
           fi
     initContainers:
+      # pg_isready of a pinned PostgreSQL client image, by digest.
       - name: wait-for-databases
-        image: postgres:16-alpine
+        image: docker.io/library/postgres:16.15-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
         env:
           # Connection fields through the environment: the script expands
           # nothing that comes from the values.
@@ -270,11 +298,20 @@ superset:
           - -c
           - ${{ waitDatabases.join('') }}
 
-  extraEnv:
-    SERVER_WORKER_AMOUNT: ${{ str(values.workers) }}
+  # The platform's CA bundle (caBundle), when set, mounted at /cacerts
+  # (REQUESTS_CA_BUNDLE).
+  extraVolumes:
+    - $if: ${{ caBundle != '' }}
+      name: cacerts
+      secret:
+        secretName: ${{ caBundle }}
+  extraVolumeMounts:
+    - $if: ${{ caBundle != '' }}
+      name: cacerts
+      mountPath: /cacerts
 
   # The wait init containers read the host and port of the database and the
-  # cache from the env Secrets (the Apache defaults read envFromSecret).
+  # cache from the chart's env Secret (as the Apache defaults do).
   supersetWorker:
     initContainers:
       - ${{ waitContainers['wait-for-postgres-redis'] }}
@@ -288,9 +325,7 @@ superset:
 
   ingress:
     ingressClassName: ${{ global.okdp.ingress.className }}
-    annotations:
-      kubernetes.io/ingress.class: ${{ global.okdp.ingress.className }}
-      $merge: ${{ platform.ingressAnnotations }}
+    annotations: ${{ platform.ingressAnnotations }}
     hosts:
       - ${{ host }}
     tls:

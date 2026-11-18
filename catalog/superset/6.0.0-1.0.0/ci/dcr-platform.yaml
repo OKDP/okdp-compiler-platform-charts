@@ -1,4 +1,4 @@
-# The platform values of the case dcr, over platform.yaml (--context, level 0):
+# The platform values of the case dcr, over platform.yaml (level 0):
 # the OAuth clients registered by DCR.
 global:
   okdp:

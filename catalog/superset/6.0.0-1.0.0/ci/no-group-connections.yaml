@@ -1,0 +1,9 @@
+# The connections of the case no-group: the instance's own.
+connections:
+  meta:
+    contract: database-server
+    engine: postgresql
+    host: pg.db.svc
+    port: 5432
+    dbName: superset
+    secretRef: {name: pg-superset}

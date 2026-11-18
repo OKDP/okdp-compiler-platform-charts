@@ -1,0 +1,3 @@
+# error: superset: no group may sign in
+# OIDC on, no group of the project, no oidcRoleMapping: nobody could sign in.
+metadataDb: meta

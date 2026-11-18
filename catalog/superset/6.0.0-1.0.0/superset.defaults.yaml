@@ -1,8 +1,7 @@
 # OKDP's defaults of the Apache Superset chart (okdp.yaml defaults), over the
 # chart's values.yaml and under the values values.cel.yaml computes. Plain
-# YAML, not a template. OKDP's former wrapper chart
-# (quay.io/okdp/charts/superset) is folded in here and in the env Secrets of
-# okdp.yaml (objects).
+# YAML, not a template. OKDP's settings are here and in the environment of
+# the pods (extraEnv, values.cel.yaml).
 image:
   repository: quay.io/okdp/superset
   tag: 6.0.0
@@ -13,10 +12,13 @@ supersetWebsockets:
     tag: 6.0.0-websocket
     pullPolicy: IfNotPresent
 
-# The env Secrets of okdp.yaml (objects). The chart's own
-# <release>-env Secret (database and cache settings from values) is not used.
+# The chart's own env Secret <release>-env, loaded by every pod
+# (envFromSecret): the database and cache settings (database, cache; the
+# host and name of the metadata database in values.cel.yaml). Its DB_USER
+# and DB_PASS are the chart's placeholders, never read: the credentials come
+# from the connection's Secret (extraEnvRaw), which wins over the Secret.
 secretEnv:
-  create: false
+  create: true
 
 # Appended to superset_config.py, sorted by key (the upstream chart passes each
 # block to tpl). Computed blocks (values.cel.yaml): oauth_to_superset_roles_mapping,
@@ -52,11 +54,11 @@ configOverrides:
 
     def FLASK_APP_MUTATOR(app: Flask) -> None:
         app.before_request_funcs.setdefault(None, []).append(make_session_permanent)
-  # OAuth2 sign-in: the keycloak (and dex) providers, read from the <release>-oauth2-env Secret and the client credentials.
+  # OAuth2 sign-in: the keycloak (and dex) providers, read from the environment (extraEnv) and the client credentials (extraEnvRaw).
   oauth_enabled: |
     import os
 
-    AUTH_OAUTH_ENABLED = eval(os.environ["AUTH_OAUTH_ENABLED"].title())
+    AUTH_OAUTH_ENABLED = os.environ["AUTH_OAUTH_ENABLED"] == "true"
     if AUTH_OAUTH_ENABLED:
       from flask_appbuilder.security.manager import AUTH_OAUTH
 
@@ -69,7 +71,7 @@ configOverrides:
                   'client_secret': os.environ["AUTH_OAUTH_CLIENT_SECRET"],
                   'client_kwargs':{
                       'scope': os.environ["AUTH_OAUTH_SCOPE"],
-                      'verify': eval(os.environ["AUTH_OAUTH_SSL_CERTIFICATE_VERIFY"].title()),
+                      'verify': os.environ["AUTH_OAUTH_SSL_CERTIFICATE_VERIFY"] == "true",
                       'code_challenge_method': os.environ["AUTH_OAUTH_USE_PKCE"]
                   },
                   'api_base_url': '%s/' % os.environ["AUTH_OAUTH_BASE_URL"],
@@ -87,7 +89,7 @@ configOverrides:
                   'client_secret': os.environ["AUTH_OAUTH_CLIENT_SECRET"],
                   'client_kwargs':{
                       'scope': os.environ["AUTH_OAUTH_SCOPE"],
-                      'verify': eval(os.environ["AUTH_OAUTH_SSL_CERTIFICATE_VERIFY"].title()),
+                      'verify': os.environ["AUTH_OAUTH_SSL_CERTIFICATE_VERIFY"] == "true",
                       'code_challenge_method': os.environ["AUTH_OAUTH_USE_PKCE"]
                   },
                   'api_base_url': '%s/' % os.environ["AUTH_OAUTH_BASE_URL"],
@@ -101,11 +103,11 @@ configOverrides:
       AUTH_OAUTH_PROVIDER = os.environ["AUTH_OAUTH_PROVIDER"]
       OAUTH_PROVIDERS = list(filter(lambda e: e['name'] == AUTH_OAUTH_PROVIDER, oauth2_providers))
       AUTH_TYPE = AUTH_OAUTH
-  # OAuth2 of the Trino datasources (<release>-trino-oauth2-env).
+  # OAuth2 of the Trino datasources (the environment, extraEnv).
   trino_oauth_enabled: |
     import os
 
-    TRINO_OAUTH_ENABLED = eval(os.environ["TRINO_OAUTH_ENABLED"].title())
+    TRINO_OAUTH_ENABLED = os.environ["TRINO_OAUTH_ENABLED"] == "true"
     if TRINO_OAUTH_ENABLED:
       superset_domain = os.environ["SUPERSET_DOMAIN"].strip().strip("/")
       redirect_uri = f"https://{superset_domain}/api/v1/database/oauth2/"
@@ -124,11 +126,20 @@ configOverrides:
   custom_sso_security_manager: |
     # https://superset.apache.org/docs/configuration/configuring-superset/#custom-oauth2-configuration
     import logging as log
+    import os
     from superset.security import SupersetSecurityManager
 
     class CustomSsoSecurityManager(SupersetSecurityManager):
 
         def oauth_user_info(self, provider, response=None):
+            info = self._oauth_user_info(provider, response)
+            allowed = [g for g in os.environ.get("AUTH_OAUTH_ALLOWED_GROUPS", "").split(",") if g]
+            if not set(allowed) & set(info.get("groups", [])):
+                log.warning("Oauth2 sign-in refused: %s is in no allowed group", info.get("username", ""))
+                return {}
+            return info
+
+        def _oauth_user_info(self, provider, response=None):
             log.info("Oauth2 provider: {0}.".format(provider))
             if provider == 'dex':
                 # As example, this line request a GET to base_url + '/' + userDetails with Bearer  Authentication,
@@ -168,12 +179,17 @@ configOverrides:
                 return {}
 
     CUSTOM_SECURITY_MANAGER = CustomSsoSecurityManager
-  # Examples database (SQLALCHEMY_EXAMPLES_URI of <release>-superset-env).
+  # Examples database (SQLALCHEMY_EXAMPLES_URI of the environment, extraEnv).
   load_examples: |
     import os
     sqlalchemy_examples_uri = os.path.expandvars(os.getenv('SQLALCHEMY_EXAMPLES_URI', ''))
     if sqlalchemy_examples_uri:
       SQLALCHEMY_EXAMPLES_URI = sqlalchemy_examples_uri
+  # The guest tokens of embedded dashboards (EMBEDDED_SUPERSET) are signed
+  # with a generated key, not Superset's default (extraEnvRaw).
+  guest_token: |
+    import os
+    GUEST_TOKEN_JWT_SECRET = os.environ["GUEST_TOKEN_JWT_SECRET"]
   # The Valkey password of the async queries backends: the Apache chart writes
   # the value of cache.password there, the password is only in the environment.
   valkey_password: |
@@ -205,17 +221,94 @@ redis:
 init:
   # The local admin (no OIDC) is created by init.command (values.cel.yaml).
   createAdmin: false
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+
+# Not root: configOverrides is Python an instance adds to. The image runs as
+# superset (uid 1000); runAsUser is the chart's own key for every pod.
+runAsUser: 1000
 
 # forceReload stamps the pods with randAlphaNum, a new value at each render:
-# never set (protected in okdp.yaml).
-supersetWorker:
-  forceReload: false
-supersetCeleryBeat:
-  forceReload: false
-supersetMcp:
-  forceReload: false
+# never set (protected in okdp.yaml). The pods' security: non-root, the
+# capabilities dropped, no privilege escalation, seccomp.
 supersetNode:
   forceReload: false
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+supersetWorker:
+  forceReload: false
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+supersetCeleryBeat:
+  forceReload: false
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+supersetMcp:
+  forceReload: false
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+supersetCeleryFlower:
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+supersetWebsockets:
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
 
 ingress:
   enabled: true
@@ -228,12 +321,3 @@ ingress:
     nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
   path: /
   pathType: ImplementationSpecific
-
-extraVolumes:
-  - name: cacerts
-    secret:
-      secretName: certs-bundle
-
-extraVolumeMounts:
-  - name: cacerts
-    mountPath: /cacerts

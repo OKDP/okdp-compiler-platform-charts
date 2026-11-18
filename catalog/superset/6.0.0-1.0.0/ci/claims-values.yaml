@@ -1,0 +1,7 @@
+# Databases of its own: the metadata database by default, the examples one
+# claimed ({}), both of the default class (ci/platform.yaml of the
+# repository); one datasource on an external trino connection.
+load_examples: true
+examplesDb: {}
+datasources:
+  - {name: shared, trino: shared-trino, catalog: sales}

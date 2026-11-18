@@ -1,5 +1,5 @@
-# The platform values of the case no-oidc-proxy, over platform.yaml (--context, level 0):
-# OIDC off, a forward proxy, another suffix and issuer.
+# The platform values of the case no-oidc-proxy, over platform.yaml (level 0):
+# OIDC off, a forward proxy, another suffix and issuer, no CA bundle ("").
 global:
   okdp:
     ingress:
@@ -11,6 +11,6 @@ global:
       httpProxy: http://proxy:3128
       httpsProxy: http://proxy:3128
       noProxy: .svc
-    certificateIssuers:
-      selfSigned:
-        name: platform-issuer
+    tls:
+      clusterIssuer: platform-issuer
+      caBundleSecret: ""

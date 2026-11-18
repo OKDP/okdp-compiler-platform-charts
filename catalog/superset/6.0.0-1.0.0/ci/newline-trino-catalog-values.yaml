@@ -1,0 +1,5 @@
+# error: - at '/catalogs/1': 'bronze\nSQLALCHEMY_DATABASE_URI=x' does not match pattern '^[^\\r\\n]*$'
+# A catalog name of a Trino connection with a line break, an item of a list.
+metadataDb: meta
+datasources:
+  - {name: shared, trino: shared-trino, catalog: sales}

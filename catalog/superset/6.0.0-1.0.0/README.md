@@ -2,8 +2,10 @@
 
 OKDP package of [Apache Superset](https://superset.apache.org): dashboards and
 SQL Lab over Trino datasources, OAuth2 sign-in against the platform OIDC
-provider. It **consumes** `database-server` connections (metadata, examples)
-and one `trino` connection per datasource; it provides no connection.
+provider. It **consumes** `database-server` connections (metadata, examples),
+by default a metadata database of its own, claimed of the provider of the
+platform's default class, and one `trino` connection per datasource; it
+provides no connection.
 
 A package in the okdp-compiler format: the former KuboCD modules are the
 upstream charts of `Chart.yaml` (its dependencies), whose values
@@ -19,16 +21,17 @@ The former module `main` rendered OKDP's superset chart
 wrapper around the Apache Superset chart. The wrapper is folded into this
 package: its defaults and Python config overrides are in the values of the
 Apache chart (fixed ones in `superset.defaults.yaml`, computed ones in
-`values.cel.yaml`), its env Secrets are OKDP objects (same names and keys):
+`values.cel.yaml`), its env Secrets are the environment of the pods
+(`extraEnv`, the same keys) and the chart's own env Secret:
 
 | Former module | Now | Rendered when |
 |---|---|---|
-| `main` (OKDP wrapper) | OKDP objects: the env Secrets `<release>-db-env`, `-oauth2-env`, `-redis-env`, `-superset-env`, `-trino-oauth2-env`; its values in `superset.defaults.yaml` (fixed) and `values.cel.yaml` (computed) | always |
+| `main` (OKDP wrapper) | the chart's values: the environment of the pods (`extraEnv`: the sign-in, the Trino OAuth2 and the examples settings), the chart's env Secret `<release>-env` (`secretEnv`, `database`, `cache`: the database and cache settings), `superset.defaults.yaml` (fixed) and `values.cel.yaml` (computed) | always |
 | `main` (Apache chart) | dependency `superset` (apache/superset 0.22.8, its bundled bitnami charts `postgresql` and `redis` disabled) | always |
 | `main` (bitnami redis subchart) | OKDP objects: Deployment + Service `<release>-redis` (Valkey 9.1, `valkey/valkey`, BSD-3-Clause; no persistence) | always |
 | `internal-secrets` | OKDP objects: ESO Password generators + ExternalSecret `<release>-internal` (`superset_secret_key`, `redis-password`) | always |
 | (new) local admin | OKDP objects: ESO Password generator + ExternalSecret `<release>-admin` (`password`) | `global.okdp.oidc.enabled: false` |
-| (new) `oidc-dcr` | `oidcClients` of `okdp.yaml`: the compiler adds the chart `oidc-dcr` (the platform's oidc-dcr chart, `oci://quay.io/adaltas` 0.5.0 by default): Job `<release>-oidc-dcr` (pre-install/pre-upgrade hook) | `global.okdp.oidc.clientProvisioning: dcr` |
+| (new) `oidc-dcr` | `oidcClients` of `okdp.yaml`: the compiler adds the chart `oidc-dcr` (the platform's oidc-dcr chart, `oci://quay.io/adaltas` 0.6.0 by default): Job `<release>-oidc-dcr` (pre-install/pre-upgrade hook) | `global.okdp.oidc.clientProvisioning: dcr` |
 
 The Apache Superset Helm chart is deprecated upstream (0.22.8 is marked
 `deprecated: true`); upstream points to the
@@ -41,8 +44,8 @@ contract's "only standard tooling" rule to be revisited.
 
 | Parameter | Default | Description |
 |---|---|---|
-| `metadataDb` | (required) | `database-server` connection of the metadata database; its Secret holds `username`/`password`. |
-| `examplesDb` | (required when `load_examples`) | `database-server` (PostgreSQL) connection receiving the examples. |
+| `metadataDb` | `{}`: a database of its own | `database-server` connection of the metadata database, a claim or a name (below). Required of it: the engine `postgresql` and its credentials Secret (`secretRef`, `username`/`password`). |
+| `examplesDb` | (required when `load_examples`) | `database-server` connection receiving the examples, a claim (`{}`: a database of its own) or a name; required of it as of `metadataDb`. |
 | `load_examples` | `false` | Load the Superset examples. They are downloaded from GitHub: leave it off without Internet access. |
 | `datasources[]` | `[]` | `{name, trino (trino connection), catalog}`: one Superset database per item. `name`: `^[A-Za-z0-9][A-Za-z0-9 _.-]*$`; `catalog`: `^[A-Za-z0-9_.-]+$`. |
 | `oidcRoleMapping` | `{}` | OIDC group → list of Superset roles. Keys and roles may not contain `{{`, `}}` or line breaks. |
@@ -50,15 +53,21 @@ contract's "only standard tooling" rule to be revisited.
 | `locale` / `currency` / `d3Format` / `d3TimeFormat` | `en` / `""` / `{}` / `{}` | Chart number and date formats. `locale` is a CLDR locale id (`fr-FR`, `zh_Hant_TW`), `currency` an ISO 4217 code (`EUR`). `d3Format` / `d3TimeFormat` reach the Python config as base64-encoded JSON (data, never code). |
 
 A `trino` reference is a connection (the platform's, the project's or the
-instance's own) or the release name of a trino instance in the same namespace
-(its `uri`, `trino://trino@trino-<namespace>.<suffix>:443`, is used).
-A `database-server` reference is a connection or, by its name, an output of
-an instance in the same namespace (e.g. `demo-pg-superset`, a database of a
-cnpg-postgresql instance). A provider of another namespace is always a
-connection.
+instance's own) or, by its name, the output of a trino instance of the
+namespace, the instance's name (`trino`; its `uri`,
+`trino://trino@<instance>.<namespace>.<suffix>:443`, is used).
+A `database-server` reference is a claim, provisioned by the provider of its
+class (`global.okdp.provisioning`): `{}`, of the default class;
+`{class: <class>}`; `{provider: <namespace>/<instance>}`; each with a
+`request` (`x-okdp-claim`: the database's `extensions`). Or a name: a
+connection, a named claim of the project (`claims.<name>` of
+`project.yaml`), or an output of an instance of the namespace (e.g.
+`demo-pg-superset`, a database of a cnpg-postgresql instance). A claim's
+connection carries its credentials Secret, copied into the namespace when
+its provider is of another one.
 
 Platform values read from `global.okdp`: `ingress.suffix`, `ingress.className`,
-`certificateIssuers.selfSigned.name`,
+`tls.clusterIssuer`, `tls.caBundleSecret`,
 `oidc.issuerUri|enabled|displayName|scope|usePKCE|insecureSkipVerify|clientProvisioning`,
 `oidc.dcr.registrationUrl|authMethod` (dcr), `proxy`.
 
@@ -67,10 +76,11 @@ OAuth clients (when `global.okdp.oidc.enabled`), keys `client_id`/`client_secret
 - `clientProvisioning: existing`: Secrets `creds-<release>-oauth2` (sign-in) and
   `creds-<release>-oauth2-trino` (Trino datasources), as before;
 - `clientProvisioning: dcr`: one client for both, registered anonymously by the
-  Job `<release>-oidc-dcr` (redirect URIs `https://superset-<namespace>.<suffix>/oauth-authorized/<displayName>`
+  Job `<release>-oidc-dcr` (redirect URIs `https://<instance>.<namespace>.<suffix>/oauth-authorized/<displayName>`
   and `.../api/v1/database/oauth2/`, grants `authorization_code` and
   `refresh_token`, the platform scopes but `openid`) into Secret
-  `<release>-<namespace>-dcr`. The Job needs the CA bundle Secret `certs-bundle`.
+  `<release>-<namespace>-dcr`. The Job trusts the platform's CA bundle
+  (`oidc.dcr.caSecret`, `tls.caBundleSecret` by default).
 
 Without OIDC the init job creates the local `admin` user (if it does not
 exist yet) with a password generated per instance by ESO: Secret
@@ -80,9 +90,20 @@ own admin creation is off (`init.createAdmin: false`) and the package's
 `init.command` creates the user from the `SUPERSET_ADMIN_PASSWORD` environment
 variable.
 
+Sign-in: the groups of the project and of the platform's administrators
+(`platform.access.viewers`) and of `oidcRoleMapping`, from the `groups` claim
+(`AUTH_OAUTH_ALLOWED_GROUPS`, the `CustomSsoSecurityManager` of
+`superset.defaults.yaml`); anyone else of the realm is refused, no account
+is created. No group at all fails the compile. The guest tokens of embedded
+dashboards are signed with a generated key (`guest-token-secret` of
+`<release>-internal`), never Superset's default. The pods run as non-root
+(uid 1000), every capability dropped, no privilege escalation, seccomp.
+
 TLS: the sign-in (`AUTH_OAUTH_SSL_CERTIFICATE_VERIFY`) and the Trino datasources
-(`connect_args.verify`) verify certificates against the CA bundle
-(`certs-bundle`, mounted at `/cacerts`, `REQUESTS_CA_BUNDLE`) unless
+(`connect_args.verify`) verify certificates against the platform's CA
+bundle, `tls.caBundleSecret` (a Secret with `ca.crt` and `bundle.p12`, as a
+trust-manager Bundle writes one, mounted at `/cacerts`,
+`REQUESTS_CA_BUNDLE`), against the image's CAs when it is unset, unless
 `global.okdp.oidc.insecureSkipVerify` is true.
 
 ## Upstream values
@@ -103,13 +124,18 @@ upstream:
         ROW_LIMIT = 100000
 ```
 
-The paths the platform relies on are refused (names and env Secrets, the
+The paths the platform relies on are refused (names, the env Secret and
+`extraSecretEnv`, the platform's variables of `extraEnv`, the
 `configOverrides` blocks of the sign-in, the Trino OAuth2 and Valkey, the
 metadata database and cache connections, the local admin creation,
-`forceReload`, the ingress host), and the lists carrying the chart's Secrets
-and wait init containers are appended to rather than replaced: see `protect`
-and `append` in `okdp.yaml` (also listed in the schema description). An
-upstream value wins over the parameter it overlaps (`supersetNode.resources`
+`forceReload`, the ingress host), and the lists carrying the chart's
+Secrets and wait init containers are appended to rather than replaced: see
+`protect` and `append` in `okdp.yaml` (also listed in the schema
+description). A variable is added to the pods with `extraEnv` or
+`extraEnvRaw`; a credential is never a value: a `secretKeyRef` of
+`extraEnvRaw`, or a Secret of the instance's loaded with `envFromSecrets`
+(`extraSecretEnv`, which writes its values into the chart's env Secret, is
+refused). An upstream value wins over the parameter it overlaps (`supersetNode.resources`
 over `cpu`/`memoryGi`, `extraConfigs` over `datasources`). `configOverrides`
 blocks are Python, run after the package's: they can redefine any setting,
 the protection only keeps the package's blocks in place. No key or value may
@@ -124,10 +150,33 @@ PostSync), idempotent. Its init container waits for the databases.
 
 ## Changes from the KuboCD package
 
+- The env Secrets of the wrapper (`<release>-db-env`, `-oauth2-env`,
+  `-redis-env`, `-superset-env`, `-trino-oauth2-env`) are gone: they held
+  settings, no credential, and a Secret of literal values is no object of a
+  package. The database and cache settings are the chart's own env Secret
+  `<release>-env` (`secretEnv.create`, `database`, `cache`; its `DB_USER`
+  and `DB_PASS` are the chart's placeholders, the credentials being read
+  from the connection's Secret, which wins), the rest the environment of
+  the pods (`extraEnv`, the same keys, protected; an instance adds
+  variables of its own). Every credential stays a `secretKeyRef`;
+  `extraSecretEnv` is refused.
+- The CA bundle is the platform's, `tls.caBundleSecret`, none when unset
+  (was the Secret `certs-bundle`, always).
 - The cache and Celery broker is Valkey, Service `<release>-redis` (was the
   bitnami redis `<release>-main-redis-headless` with a PVC): the bitnami chart
   reads its password back with `lookup` and its images are no longer
-  published. The cache and the Celery queue are not persisted.
+  published. The cache and the Celery queue are not persisted. Its
+  Deployment and Service are the compiler's `okdpWebWorkload` (the `valkey`
+  variable of `okdp.yaml` is its argument: the hardened pod, no security
+  context written by hand, no ServiceAccount token), which names the
+  Service's port `http` (was `redis`; the pods reach it by its number, 6379),
+  leaves out `type: ClusterIP` (the default) and adds the containers' own
+  `runAsNonRoot` and `seccompProfile`; the labels, selector, strategy
+  (`Recreate`), image, probes and resources are unchanged.
+- The images the package sets run by digest: Valkey (`valkey/valkey`
+  9.1.2-alpine) and the `wait-for-databases` init container's `pg_isready`
+  (`postgres` 16.15-alpine, was the floating `16-alpine`). Superset's own
+  image is the instance's (`upstream.superset.image`).
 - Apache chart 0.22.8 (was 0.15.2 under the wrapper): the Superset
   Deployments select on `app.kubernetes.io/{name,instance,component}` (were
   `app`/`release`) and lose the `-main` name suffix, so they are recreated,
@@ -147,6 +196,8 @@ PostSync), idempotent. Its init container waits for the databases.
   in a Superset pod.
 - TLS verification follows `global.okdp.oidc.insecureSkipVerify` (it was
   always off for the sign-in and the Trino datasources).
+- `metadataDb` is a database of its own by default, claimed; both database
+  references require the `postgresql` engine and credentials.
 
 ## Known gaps
 
@@ -163,11 +214,15 @@ express (okdp-compiler gap list):
 
 ## Tests
 
-```sh
-scripts/compile-charts.sh catalog/superset/6.0.0-1.0.0   # compile, check and render ci/*-values.yaml
-```
+Its cases, `ci/*-values.yaml`, compile by hand as the repository's
+[README](../../../README.md#working-on-a-package) shows.
 
-The cases: `examples-trino` (OIDC with existing clients, examples, an
-internal and an external Trino datasource), `dcr` (the same, the OAuth client
-registered by DCR), `no-oidc-proxy` (OIDC off, the local admin, a proxy,
-sizing), and one failing case per rule of the `errors` section.
+The cases: `examples-trino` (OIDC with existing clients, examples, a
+datasource on the trino of the project, `ci/examples-trino-instances/`, and
+one on an external Trino), `dcr` (the same, the OAuth client registered by
+DCR), `claims` (the metadata and the examples databases claimed, bound to
+the repository's test provider, `ci/` at its root), `no-oidc-proxy` (OIDC
+off, the local admin, a proxy, sizing, no CA bundle), one failing case per
+rule of the `errors` section, and `metadata-db-no-secret` (what
+`metadataDb` requires). Every case but `no-oidc-proxy` trusts the
+platform's CA bundle (`ci/platform.yaml`).

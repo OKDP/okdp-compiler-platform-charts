@@ -1,0 +1,5 @@
+# The platform values of the case no-group, over platform.yaml: no administrators.
+global:
+  okdp:
+    access:
+      admins: []
