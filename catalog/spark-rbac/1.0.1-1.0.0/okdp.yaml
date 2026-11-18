@@ -1,13 +1,79 @@
 # OKDP's part of spark-rbac: what an instance may override of its upstream
-# chart, and what the instance publishes. values.cel.yaml computes the
-# chart's values. No platform value is read.
+# chart, its own Role and RoleBinding, and what the instance publishes.
+# values.cel.yaml computes the chart's values. No platform value is read.
 
 roles: [spark-rbac]
 upstream:
   spark-rbac:
-    # okdp.info.yaml publishes it, and the Spark jobs of the namespace use
-    # it (serviceAccountName).
-    protect: [serviceAccount.name]
+    # okdp.info.yaml publishes the ServiceAccount, and the Spark jobs of the
+    # namespace use it (serviceAccountName). No Role nor RoleBinding of the
+    # chart (rbac, values.cel.yaml): its RoleBinding grants spark-role, which
+    # reads the namespace's Secrets, to every ServiceAccount of the namespace
+    # (the group system:serviceaccounts:<namespace>). The Role is OKDP's
+    # (objects).
+    protect: [rbac, serviceAccount.name]
+
+# OKDP's own objects, rendered by the umbrella (okdp.objects.yaml): the Role
+# of the Spark jobs, its RoleBinding to their ServiceAccount alone and the
+# bounds of the pods it creates (rbacCreate).
+objects:
+  # What Spark on Kubernetes needs of its driver: its executors' pods, their
+  # services, configmaps and on-demand volumes, the logs and events; the
+  # SparkApplications to read, and to write only with submitApplications, for
+  # a task that submits them as this ServiceAccount (an Airflow task, its
+  # pod's serviceAccountName). No right on secrets, but
+  # the pods it creates mount any Secret of the namespace and run as any of
+  # its ServiceAccounts, which needs no right on them: the ConfigMap
+  # <release>-pod-bounds below bounds them.
+  - $if: ${{ values.rbacCreate }}
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata:
+      name: ${{ okdpFullname() }}
+      labels: ${{ labels }}
+    rules:
+      - apiGroups: [""]
+        resources: ["pods", "services", "configmaps", "persistentvolumeclaims"]
+        verbs: ["get", "list", "watch", "create", "delete", "patch", "deletecollection"]
+      - apiGroups: [""]
+        resources: ["pods/log", "events"]
+        verbs: ["get", "list", "watch"]
+      - apiGroups: ["sparkoperator.k8s.io"]
+        resources: ["sparkapplications"]
+        verbs: '${{ values.submitApplications ? ["get", "list", "watch", "create", "update", "patch", "delete"] : ["get", "list", "watch"] }}'
+      - apiGroups: ["sparkoperator.k8s.io"]
+        resources: ["sparkapplications/status"]
+        verbs: ["get", "list", "watch"]
+  - $if: ${{ values.rbacCreate }}
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      name: ${{ okdpFullname() }}
+      labels: ${{ labels }}
+    subjects:
+      - kind: ServiceAccount
+        name: ${{ values.serviceAccountName }}
+        namespace: ${{ release.namespace }}
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: Role
+      name: ${{ okdpFullname() }}
+  # The bounds of the pods the Spark jobs create, the param of the platform's
+  # ValidatingAdmissionPolicy okdp-pod-bounds (cluster-scoped, no project's),
+  # inert without it: they run as the ServiceAccount, read no Secret but
+  # podSecrets, and the ConfigMap is not theirs to write (as jupyterhub's
+  # <release>-spark-pod-bounds).
+  - $if: ${{ values.rbacCreate }}
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: ${{ okdpFullname('pod-bounds') }}
+      labels:
+        $merge: ${{ labels }}
+        okdp.io/pod-bounds: "true"
+    data:
+      serviceAccount: ${{ values.serviceAccountName }}
+      secrets: ${{ values.podSecrets.join(',') }}
 
 # No UI, no provided connection.
 instance:

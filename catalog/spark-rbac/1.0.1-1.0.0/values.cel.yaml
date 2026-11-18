@@ -1,8 +1,10 @@
 # The values of the spark-rbac chart: the flat console parameters onto the
-# keys of the upstream chart (the former KuboCD module "main").
+# keys of the upstream chart. The chart's
+# Role and RoleBinding never: the Role is OKDP's, bound to the ServiceAccount
+# alone (okdp.yaml objects, rbacCreate).
 spark-rbac:
   rbac:
-    create: ${{ values.rbacCreate }}
+    create: false
   serviceAccount:
     create: ${{ values.serviceAccountCreate }}
     name: ${{ values.serviceAccountName }}

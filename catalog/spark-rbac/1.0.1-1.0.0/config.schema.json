@@ -5,11 +5,12 @@
   "properties": {
     "global": {
       "type": "object",
-      "description": "Platform values: the context (platform/platform-values.yaml, global.okdp), never an instance's."
+      "description": "Platform values (global.okdp): the context's layers, the platform's (platform.yaml) then its project's (project.yaml), never an instance's."
     },
     "rbacCreate": {
       "type": "boolean",
       "title": "Create role",
+      "description": "A Role for Spark on Kubernetes (pods, services, configmaps, persistent volume claims, SparkApplications to read, to write with submitApplications; no secrets), bound to the ServiceAccount alone, and the ConfigMap <release>-pod-bounds that bounds the pods it creates (the platform's okdp-pod-bounds policy).",
       "default": true,
       "x-ui-group": "RBAC",
       "x-ui-order": 1
@@ -38,6 +39,30 @@
       "x-ui-order": 4,
       "x-ui-advanced": true
     },
+    "submitApplications": {
+      "type": "boolean",
+      "title": "Submit SparkApplications",
+      "description": "Let the ServiceAccount create, update and delete SparkApplications, for a task that submits them as this ServiceAccount (an Airflow task, its pod's serviceAccountName). Off, it reads them only: a Spark driver needs no more.",
+      "default": false,
+      "x-ui-group": "RBAC",
+      "x-ui-order": 5,
+      "x-ui-advanced": true
+    },
+    "podSecrets": {
+      "type": "array",
+      "title": "Secrets of the pods",
+      "description": "The Secrets the pods the Spark jobs create may mount or read (volumes, secretKeyRef, envFrom): the S3 identities of the executors, for example. Nothing else of the namespace's Secrets, with the platform's okdp-pod-bounds policy.",
+      "default": [],
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+        "maxLength": 253
+      },
+      "uniqueItems": true,
+      "x-ui-group": "RBAC",
+      "x-ui-order": 6,
+      "x-ui-advanced": true
+    },
     "upstream": {
       "type": "object",
       "title": "Upstream chart values",
@@ -51,7 +76,7 @@
         "spark-rbac": {
           "type": "object",
           "title": "spark-rbac",
-          "description": "Values of the spark-rbac chart 1.0.1 (oci://quay.io/okdp/charts/spark-rbac), for example serviceAccount.annotations (a workload identity) or rbac.annotations. Refused: serviceAccount.name (parameter serviceAccountName). Appended: none.",
+          "description": "Values of the spark-rbac chart 1.0.1 (oci://quay.io/okdp/charts/spark-rbac), the ServiceAccount of the Spark jobs (its Role is OKDP's, the chart's off): serviceAccount.annotations (a workload identity) in a privileged project only (the compiler denies the key serviceAccount to the others' upstream values). Refused: rbac (the chart's Role and RoleBinding, parameter rbacCreate), serviceAccount.name (parameter serviceAccountName). Appended: none.",
           "default": {},
           "x-ui-widget": "yaml",
           "x-ui-order": 1,

@@ -1,0 +1,3 @@
+# The ServiceAccount submits SparkApplications: the write verbs.
+serviceAccountName: jobs
+submitApplications: true
