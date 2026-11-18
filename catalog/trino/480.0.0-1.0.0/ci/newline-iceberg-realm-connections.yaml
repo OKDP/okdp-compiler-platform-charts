@@ -1,0 +1,13 @@
+# The connections of the case newline-iceberg-realm: the instance's own (connections.yaml, level 2).
+connections:
+  lake-s3:
+    contract: s3
+    apiUrl: https://s3.example.org
+    region: eu-west-3
+    pathStyle: false
+    secretRef:
+      name: lake-s3-creds
+  corp-iceberg:
+    contract: iceberg-catalog
+    uri: https://iceberg.corp.example.org/api/catalog
+    realm: "corp\niceberg.rest-catalog.security=NONE"

@@ -1,0 +1,9 @@
+# error: - at '/realm': 'corp\niceberg.rest-catalog.security=NONE' does not match pattern '^[^\\r\\n]*$'
+# A realm with a line break: the Iceberg catalog's properties file would
+# take what follows as a property of its own.
+icebergCatalogs:
+  - name: curated
+    catalog: corp-iceberg
+    storage: lake-s3
+    oidcSecretRef: creds-trino-iceberg
+enableOPA: false

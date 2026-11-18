@@ -1,0 +1,6 @@
+# The project's named claims (project.yaml, level 1): the bucket lake, the
+# metastore's warehouse, the Polaris catalogs' and the trino catalogs' store.
+claims:
+  lake:
+    contract: s3
+    request: {paths: [warehouse]}

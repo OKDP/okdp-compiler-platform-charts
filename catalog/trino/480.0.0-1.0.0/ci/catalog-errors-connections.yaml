@@ -1,7 +1,13 @@
-# The connections of the case catalog-errors: the instance's own (--context 2:).
+# The connections of the case catalog-errors: the instance's own (connections.yaml, level 2).
 connections:
   aws:
     contract: s3
     apiUrl: https://s3.eu-west-1.amazonaws.com
     region: eu-west-1
     pathStyle: false
+  corp-hive:
+    contract: hive
+    thriftUri: thrift://hms.corp.example.org:9083
+  corp-iceberg:
+    contract: iceberg-catalog
+    uri: https://iceberg.corp.example.org/api/catalog

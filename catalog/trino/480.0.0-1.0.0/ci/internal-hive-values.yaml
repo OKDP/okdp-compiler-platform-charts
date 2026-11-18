@@ -1,9 +1,11 @@
-# One hive catalog on an internal metastore (the hive-metastore release demo-hive
-# in the same namespace, no connection file) and an external s3 connection.
-# OPA off, as in the demo project.
-s3SecretRef: creds-trino-s3
+# One hive catalog on an internal metastore, the hive-metastore instance
+# hive of the project (internal-hive-instances/), whose hive output it
+# references by its name, and the bucket lake, a named claim of the project
+# (internal-hive-project.yaml) the metastore claims too: the catalog's S3
+# identity is the claim's credentials Secret. OPA off, as in the demo
+# project.
 hiveCatalogs:
   - name: bronze
-    metastore: demo-hive
-    storage: demo-storage
+    metastore: hive
+    storage: lake
 enableOPA: false

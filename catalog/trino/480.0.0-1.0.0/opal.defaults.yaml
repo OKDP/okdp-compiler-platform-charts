@@ -1,11 +1,19 @@
 # OKDP's defaults of the opal chart (okdp.yaml defaults): over the chart's
 # values.yaml, under the values computed by values.cel.yaml. Plain YAML.
+# The chart takes no upstream values: its images are the package's, pinned
+# by digest (the chart writes <registry>/<repository>:<tag>). pgsql is the
+# OPAL servers' broadcast channel (server.broadcastPgsql), postgres:alpine
+# by default.
 image:
   client:
     registry: docker.io
     repository: permitio/opal-client-standalone
-    tag: 0.9.4
+    tag: 0.9.4@sha256:cf073a051a724eaea448ecae3e2e782d3cd681a05ff05f2db6a0305a62fe2372
   server:
     registry: docker.io
     repository: permitio/opal-server
-    tag: 0.9.4
+    tag: 0.9.4@sha256:3dbce6cc8610c722d3d34bff7908dd86fcb50ea7d031e2e12f8464a1419a5d57
+  pgsql:
+    registry: docker.io
+    repository: postgres
+    tag: 18.6-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5

@@ -1,9 +1,9 @@
-# The values of the charts of trino (the former KuboCD modules main, opa and
-# opal), computed from the parameters, the platform values and the catalogs
+# The values of the charts of trino, computed from the parameters, the
+# platform values and the catalogs
 # of okdp.yaml (vars). ${{ ... }} is a CEL expression; Trino's own ${ENV:X}
 # and Kubernetes' $(VAR) stay literal.
 
-# Module main: the trino chart.
+# The trino chart.
 trino:
   fullnameOverride: ${{ fullname }}
   catalogs:
@@ -39,7 +39,14 @@ trino:
     resources:
       limits:
         memory: ${{ str(values.coordinatorMemoryGi) }}Gi
+    # The platform's CA bundle (caBundle), when set: the JVM's trust store.
+    additionalVolumes: ${{ caVolumes }}
+    additionalVolumeMounts: ${{ caVolumeMounts }}
+    additionalJVMConfig: ${{ caJVMConfig }}
   worker:
+    additionalVolumes: ${{ caVolumes }}
+    additionalVolumeMounts: ${{ caVolumeMounts }}
+    additionalJVMConfig: ${{ caJVMConfig }}
     resources:
       requests:
         cpu: ${{ str(values.workerCpu) }}
@@ -67,10 +74,14 @@ trino:
       http-server.authentication.oauth2.token-url=${{ global.okdp.oidc.tokenUrl }}
       http-server.authentication.oauth2.scopes=${{ platform.oidc.scope.replace(' ', ',') }}
       http-server.authentication.oauth2.principal-field=preferred_username
-
+      ${{ additionalAudiences }}
       http-server.authentication.jwt.key-file=${{ global.okdp.oidc.jwksUri }}
       http-server.authentication.jwt.required-issuer=${{ global.okdp.oidc.issuerUri }}
-      http-server.authentication.jwt.required-audience=account
+      # The instance's own client, never the realm-wide "account": a token
+      # minted for another client of the realm is not this Trino's (Keycloak
+      # puts the client in the audience only through an audience mapper,
+      # README).
+      http-server.authentication.jwt.required-audience=${ENV:TRINO_OAUTH_CLIENT_ID}
       http-server.authentication.jwt.principal-field=client_id
   ingress:
     className: ${{ global.okdp.ingress.className }}
@@ -92,7 +103,7 @@ trino:
       opa.log-responses=${{ str(values.enableOPADebugLogs) }}
       opa.log-requests=${{ str(values.enableOPADebugLogs) }}
 
-# Module opa: opa-kube-mgmt, rendered with enableOPA. Never set
+# opa-kube-mgmt, rendered with enableOPA. Never set
 # admissionController.enabled: its template runs genCA and genSignedCert
 # (protected in okdp.yaml).
 opa-kube-mgmt:
@@ -101,11 +112,22 @@ opa-kube-mgmt:
   extraArgs:
     $if: ${{ values.enableOPADebugLogs }}
     $value: ["--set=status.console=true", "--set=decision_logs.console=true"]
-  mgmt: {enabled: "${{ !values.enableOPAL }}"}
+  # kube-mgmt loads the policy and data ConfigMaps labelled with the OPA
+  # instance's own name, not the label every OPA tool knows (rego, opa): a
+  # ConfigMap made for another OPA, or by a job of the namespace, is not
+  # Trino's authorization. The label is a selector, not a boundary: whoever
+  # creates ConfigMaps in the namespace can set it (README, "OPA's API").
+  mgmt:
+    enabled: "${{ !values.enableOPAL }}"
+    extraArgs:
+      - --policy-label=openpolicyagent.org/policy
+      - --policy-value=${{ opaName }}
+      - --data-label=openpolicyagent.org/data
+      - --data-value=${{ opaName }}
   rbac: {create: "${{ !values.enableOPAL }}"}
   serviceAccount: {create: "${{ !values.enableOPAL }}"}
 
-# Module opal: the OPAL server and client feeding OPA from a policy
+# The OPAL server and client feeding OPA from a policy
 # repository, rendered with enableOPA and enableOPAL. Its secrets come from
 # the opal-secrets hook (okdp.yaml objects).
 opal:

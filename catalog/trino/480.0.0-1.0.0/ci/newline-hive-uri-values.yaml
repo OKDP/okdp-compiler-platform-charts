@@ -1,0 +1,7 @@
+# error: - at '/thriftUri': 'thrift://hms.corp.example.org:9083\r\nhive.metastore.sasl.enabled=false' does not match pattern '^[^\\r\\n]*$'
+# A metastore URI with a carriage return and a line feed.
+hiveCatalogs:
+  - name: raw
+    metastore: corp-hive
+    storage: lake-s3
+enableOPA: false

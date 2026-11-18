@@ -1,0 +1,12 @@
+# The connections of the case newline-s3-region: the instance's own (connections.yaml, level 2).
+connections:
+  lake-s3:
+    contract: s3
+    apiUrl: https://s3.example.org
+    region: "eu-west-3\nhive.s3.aws-access-key=admin"
+    pathStyle: false
+    secretRef:
+      name: lake-s3-creds
+  corp-hive:
+    contract: hive
+    thriftUri: thrift://hms.corp.example.org:9083

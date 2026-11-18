@@ -1,0 +1,5 @@
+# The JWT audience is this instance's OAuth client (required-audience, the
+# realm-wide account no longer passes), its client grants the browser flows
+# only: no client_credentials (oidcClients). The render's config.properties
+# reads required-audience=${ENV:TRINO_OAUTH_CLIENT_ID}.
+numWorkers: 1

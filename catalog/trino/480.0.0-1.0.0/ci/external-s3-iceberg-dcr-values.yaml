@@ -1,6 +1,6 @@
-# External connections only: a hive metastore, an Iceberg REST catalog and an
-# s3 store whose secretRef is the catalogs' S3 identity (no s3SecretRef on the
-# release). Plus an internal Polaris. OAuth client registered by DCR, proxy set.
+# External connections only: a hive metastore, two Iceberg REST catalogs and
+# an s3 store whose secretRef is the catalogs' S3 identity (no s3SecretRef on
+# the release). OAuth client registered by DCR, proxy set.
 hiveCatalogs:
   - name: raw
     metastore: corp-hive
@@ -11,7 +11,7 @@ icebergCatalogs:
     storage: lake-s3
     oidcSecretRef: creds-trino-iceberg
   - name: silver
-    catalog: demo-polaris
+    catalog: corp-iceberg
     storage: lake-s3
     warehouse: silver
     oauth2Scope: PRINCIPAL_ROLE:writer

@@ -1,0 +1,4 @@
+# A database of its own (claimed by default), the catalogs in the bucket
+# lake, a named claim of the project, its identity the claim's.
+storage: lake
+realm: sandbox

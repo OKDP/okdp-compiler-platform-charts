@@ -1,0 +1,9 @@
+# error: - at '/apiUrl': 'https://s3.example.org\nhive.s3.path-style-access=false' does not match pattern '^[^\\r\\n]*$'
+# A URL of a connection with a line break: Trino's catalog properties file
+# would take what follows as a property of its own. The contract refuses the
+# connection, whatever package reads it.
+hiveCatalogs:
+  - name: raw
+    metastore: corp-hive
+    storage: lake-s3
+enableOPA: false

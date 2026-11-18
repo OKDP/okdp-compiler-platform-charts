@@ -18,12 +18,14 @@ sources:
   - https://github.com/OKDP/platform-charts
   - https://github.com/trinodb/charts
 dependencies:
-  - name: trino                       # the former KuboCD module main
+  - name: trino
     repository: https://trinodb.github.io/charts
     version: 1.42.2
-  - name: opa-kube-mgmt               # module opa: rendered with enableOPA
+  - name: opa-kube-mgmt               # rendered with enableOPA
     repository: https://open-policy-agent.github.io/kube-mgmt/charts
     version: 11.0.12
-  - name: opal                        # module opal: rendered with enableOPA and enableOPAL
+    condition: opa-kube-mgmt.enabled
+  - name: opal                        # rendered with enableOPA and enableOPAL
     repository: https://permitio.github.io/opal-helm-chart
     version: 0.0.30
+    condition: opal.enabled

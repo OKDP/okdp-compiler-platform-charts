@@ -1,0 +1,5 @@
+# The audience the control plane's SQL editor exchanges its tokens for, beside
+# the instance's client: the render's config.properties reads
+# http-server.authentication.oauth2.additional-audiences=trino,https://sql.example.org.
+numWorkers: 1
+oauth2AdditionalAudiences: [trino, "https://sql.example.org"]

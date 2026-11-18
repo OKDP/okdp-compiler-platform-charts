@@ -1,7 +1,7 @@
 # OKDP's part of trino: the platform values it needs, its upstream charts'
 # defaults and what an instance may override; then the mapping besides the
 # charts' values (values.cel.yaml): the catalogs computed once (vars), the
-# rules of the instance, its OAuth client (the former module oidc-dcr),
+# rules of the instance, its OAuth client,
 # OKDP's own objects, and what the instance publishes. ${{ ... }} is a CEL
 # expression; Trino's own ${ENV:X} and Kubernetes' $(VAR) stay literal.
 
@@ -10,7 +10,7 @@ dependsOn: [data-catalog, ingress]
 require:
   - ingress.suffix
   - ingress.className
-  - certificateIssuers.selfSigned.name
+  - tls.clusterIssuer
   - oidc.issuerUri
   - oidc.authUrl
   - oidc.tokenUrl
@@ -43,14 +43,51 @@ upstream:
     # helpers (.Capabilities) are included by webhookconfiguration.yaml only;
     # poddisruptionbudget.yaml (podDisruptionBudget.enabled, false) picks
     # policy/v1 on both engines. And the switches enableOPAL drives.
+    # mgmt.extraArgs holds the labels of the ConfigMaps kube-mgmt loads
+    # (values.cel.yaml): a later flag would win.
     protect: [fullnameOverride, authz, useHttps, port, admissionController, prometheus,
-              serviceMonitor, mgmt.enabled, rbac.create, serviceAccount.create]
+              serviceMonitor, mgmt.enabled, mgmt.extraArgs, rbac.create, serviceAccount.create]
     append: [extraArgs]
 
 vars:
-  host: trino-${{ release.namespace }}.${{ global.okdp.ingress.suffix }}
+  # The platform's CA bundle, the Secret global.okdp.tls.caBundleSecret ("":
+  # none, the platform's certificates chain to a public CA): mounted at
+  # /cacerts in the coordinator and the workers, its bundle.p12 the JVM's
+  # trust store.
+  caBundle: ${{ global.okdp.?tls.?caBundleSecret.orValue('') }}
+  caVolumes: >-
+    ${{ caBundle == '' ? [] : [{'name': 'cacerts', 'secret': {'secretName': caBundle}}] }}
+  caVolumeMounts: >-
+    ${{ caBundle == '' ? [] : [{'name': 'cacerts', 'mountPath': '/cacerts', 'readOnly': true}] }}
+  caJVMConfig: >-
+    ${{ caBundle == '' ? [] : ['-Djavax.net.ssl.trustStore=/cacerts/bundle.p12',
+        '-Djavax.net.ssl.trustStorePassword=${ENV:TRUSTSTORE_PASSWORD}'] }}
+  # Instance name: the release name without its project prefix (the console
+  # prefixes instances with their project, which would double it in the
+  # host).
+  instance: >-
+    ${{ release.name.startsWith(release.namespace + '-')
+        ? release.name.substring(size(release.namespace) + 1) : release.name }}
+  # Public host: <instance>.<namespace>.<ingress suffix>.
+  host: ${{ instance }}.${{ release.namespace }}.${{ global.okdp.ingress.suffix }}
   fullname: ${{ okdpFullname('trino') }}
   opaName: ${{ okdpFullname('opa') }}
+  # The line of server.coordinatorExtraConfig (protected: an instance sets it
+  # by this parameter only) naming the audiences the OAuth2 authenticator
+  # accepts beside the instance's client; "" (a blank line) without any.
+  additionalAudiences: >-
+    ${{ size(values.oauth2AdditionalAudiences) == 0 ? ''
+        : 'http-server.authentication.oauth2.additional-audiences=' + values.oauth2AdditionalAudiences.join(',') }}
+  # The pods that call OPA's API (8181, no authentication: authz is off in
+  # opa-kube-mgmt.defaults.yaml): Trino's, and the OPAL client that loads
+  # the policies, the NetworkPolicy of objects lets in nobody else.
+  opaClients: >-
+    ${{ [{'podSelector': {'matchLabels': {'app.kubernetes.io/name': 'trino',
+                                          'app.kubernetes.io/instance': release.name}}}]
+        + (values.enableOPAL
+           ? [{'podSelector': {'matchLabels': {'opal.ac/role': 'client',
+                                               'app.kubernetes.io/instance': release.name}}}]
+           : []) }}
   internalSecret: ${{ okdpFullname('internal') }}
   # Secrets of the OPAL tokens and keys, written by the opal-secrets hook.
   opalSecrets:
@@ -60,6 +97,10 @@ vars:
   # kubectl of the opal-secrets hook: the Kubernetes project image (distroless:
   # kubectl and kube-log-runner, no shell), pinned by digest.
   kubectlImage: registry.k8s.io/kubectl:v1.36.5@sha256:0667e3f3e6ef435d7cd4c16684244703ebd67314c17511c2a9f87ea44f6cdf6b
+  # OPAL server of the opal-secrets hook, the opal chart's (opal.defaults.yaml)
+  # by digest: its ssh-keygen writes the RSA key pair, opal-server the
+  # tokens. Runs as its user opal (1000).
+  opalImage: docker.io/permitio/opal-server:0.9.4@sha256:3dbce6cc8610c722d3d34bff7908dd86fcb50ea7d031e2e12f8464a1419a5d57
   # The catalogs, connections resolved: name, env (prefix of its env
   # variables), storage (the s3 reference), s3Secret, warehouse and oidcSecret
   # (iceberg), properties (the catalog file). Credentials stay in Secrets and
@@ -115,6 +156,158 @@ vars:
   catalogs: ${{ hive + iceberg }}
 
 # Every message fails the compile, together.
+  # The opal-secrets hook Job, handed to okdpJob (the compiler's hardened Job:
+  # non-root, seccomp RuntimeDefault, no privilege escalation, every capability
+  # dropped, Helm hooks, the OKDP labels of the component). Its containers keep
+  # the writable root filesystem they have always had (readOnlyRootFilesystem:
+  # false): the OPAL server image's start.sh and uvicorn write outside the
+  # volumes, kubectl in a cache; not verified read-only in a cluster.
+  opalJob:
+    name: ${{ okdpFullname('opal-secrets') }}
+    component: opal-secrets
+    backoffLimit: 3
+    hook:
+      helm: pre-install,pre-upgrade
+      weight: -5
+      deletePolicy: before-hook-creation,hook-succeeded
+    pod:
+      serviceAccountName: ${{ okdpFullname('opal-secrets') }}
+      # kubectl in the last container calls the API server with the account's
+      # token, to apply the three Secrets.
+      automountServiceAccountToken: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      volumes:
+        - name: state
+          emptyDir: {}
+        - name: shared-ssh
+          emptyDir: {}
+        - name: shared-tokens
+          emptyDir: {}
+      # Runs on every install, upgrade and Argo sync: decide once
+      # whether the secrets exist, so the generators (an OPAL server
+      # included) do not run, and cannot fail the sync, when there
+      # is nothing to generate. The steps are sequential init
+      # containers and the Secrets are written as a manifest, so
+      # kubectl runs without a shell: registry.k8s.io/kubectl is
+      # distroless (kubectl and kube-log-runner, which saves the
+      # output of `kubectl get` to a file).
+      initContainers:
+        - name: check
+          image: ${{ kubectlImage }}
+          readOnlyRootFilesystem: false
+          command:
+            - /bin/kube-log-runner
+            - -log-file=/state/existing.yaml
+            - -redirect-stderr=false
+            - /bin/kubectl
+            - get
+            - secret
+            - ${{ opalSecrets.ssh }}
+            - ${{ opalSecrets.master }}
+            - ${{ opalSecrets.client }}
+            - --ignore-not-found
+            - -o
+            # The existing Secrets as an apply-able manifest (name, type, data).
+            - 'jsonpath={range .items[*]}---{"\n"}apiVersion: v1{"\n"}kind: Secret{"\n"}metadata:{"\n"}  name: {.metadata.name}{"\n"}type: {.type}{"\n"}data: {.data}{"\n"}{end}'
+          volumeMounts:
+            - name: state
+              mountPath: /state
+        - name: ssh-keygen
+          image: ${{ opalImage }}
+          readOnlyRootFilesystem: false
+          command:
+            - sh
+            - -c
+            - |
+              if [ "$(grep -c '^kind: Secret' /state/existing.yaml)" = 3 ]; then
+                echo "OPAL secrets already exist, keeping them."
+                touch /state/skip
+                exit 0
+              fi
+              ssh-keygen -t 'rsa' -b '4096' -f /mnt/id_rsa -N '' -m pem -q
+              chmod 644 /mnt/id_rsa /mnt/id_rsa.pub
+          volumeMounts:
+            - name: state
+              mountPath: /state
+            - name: shared-ssh
+              mountPath: /mnt
+        - name: opal-token-generator
+          image: ${{ opalImage }}
+          readOnlyRootFilesystem: false
+          env:
+            - name: UVICORN_NUM_WORKERS
+              value: "1"
+            - name: SSH_SECRET_NAME
+              value: ${{ opalSecrets.ssh }}
+            - name: MASTER_TOKEN_SECRET_NAME
+              value: ${{ opalSecrets.master }}
+            - name: JWT_CLIENT_TOKEN
+              value: ${{ opalSecrets.client }}
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              if [ -f /state/skip ]; then
+                # Re-applied unchanged: the tokens are kept.
+                cp /state/existing.yaml /opal/tokens/secrets.yaml
+                exit 0
+              fi
+              export OPAL_AUTH_PRIVATE_KEY="$(cat /opal/ssh/id_rsa)"
+              export OPAL_AUTH_PUBLIC_KEY="$(cat /opal/ssh/id_rsa.pub)"
+              export OPAL_AUTH_MASTER_TOKEN=$(opal-server generate-secret)
+              echo $OPAL_AUTH_MASTER_TOKEN > /opal/tokens/master-token.txt
+              start.sh &
+              timeout 30 sh -c "until wget -qO- http://localhost:7002/healthcheck 2>/dev/null | grep -q ok; do sleep 2; done"
+              echo $(opal-server obtain-token $OPAL_AUTH_MASTER_TOKEN --type=client) | tr -d '\n' > /opal/tokens/jwt.txt
+              b64() { base64 -w0 "$1"; }
+              cat > /opal/tokens/secrets.yaml <<EOF
+              ---
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: $SSH_SECRET_NAME
+              type: Opaque
+              data:
+                OPAL_AUTH_PRIVATE_KEY: $(b64 /opal/ssh/id_rsa)
+                OPAL_AUTH_PUBLIC_KEY: $(b64 /opal/ssh/id_rsa.pub)
+              ---
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: $MASTER_TOKEN_SECRET_NAME
+              type: Opaque
+              data:
+                OPAL_AUTH_MASTER_TOKEN: $(b64 /opal/tokens/master-token.txt)
+              ---
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: $JWT_CLIENT_TOKEN
+              type: Opaque
+              data:
+                OPAL_CLIENT_TOKEN: $(b64 /opal/tokens/jwt.txt)
+              EOF
+          volumeMounts:
+            - name: state
+              mountPath: /state
+              readOnly: true
+            - name: shared-ssh
+              mountPath: /opal/ssh
+              readOnly: true
+            - name: shared-tokens
+              mountPath: /opal/tokens
+      containers:
+        - name: kubectl
+          image: ${{ kubectlImage }}
+          readOnlyRootFilesystem: false
+          command: [/bin/kubectl, apply, -f, /data/secrets.yaml]
+          volumeMounts:
+            - name: shared-tokens
+              mountPath: /data
+              readOnly: true
+
 errors:
   - $spread: >-
       ${{ catalogs.filter(c, c.s3Secret == '').map(c, 'trino: catalog "' + c.name + '": no S3 credentials, '
@@ -126,26 +319,49 @@ errors:
       ${{ catalogs.filter(c, c.name in ['tpch', 'tpcds'] || catalogs.filter(d, d.name == c.name).size() > 1)
           .map(c, 'trino: catalog name "' + c.name + '" is used twice (tpch and tpcds are built in)') }}
 
-# The OAuth client (the former module oidc-dcr), registered by dynamic client
+# The OAuth client, registered by dynamic client
 # registration in dcr mode (global.okdp.oidc.clientProvisioning: dcr): the
 # compiler adds the chart oidc-dcr (Job <release>-oidc-dcr), which writes the
 # Secret platform.oidcClientSecret (<release>-<namespace>-dcr). Nothing in
 # existing mode.
 oidcClients:
   - redirectUris: ['https://${{ host }}/oauth2/callback']
-    grantTypes: [authorization_code, refresh_token, client_credentials]
+    grantTypes: [authorization_code, refresh_token]
     scope: web-origins acr roles profile groups basic email address phone organization offline_access microprofile-jwt
     request:
       logo_uri: https://landscape.cncf.io/logos/008125b82108f19aea6b0004ce5f255b72bab5b5e5c169a302d7bf845edb8e6b.svg
 
 # OKDP's own objects, rendered by the umbrella (okdp.objects.yaml).
 objects:
-  # The shared secret of the coordinator/worker internal communication
-  # (former module internal-secrets): an ESO Password generator and the
+  # The shared secret of the coordinator/worker internal communication:
+  # an ESO Password generator and the
   # ExternalSecret writing the Secret, generated once (refreshInterval 0).
   - $spread: >-
       ${{ okdpGeneratedSecret({'name': internalSecret, 'keys': [{'key': 'shared-secret', 'length': 32}]}) }}
-  # Former module opal-secrets, a pre-install/pre-upgrade hook (Argo:
+  # OPA's API is reached by Trino's pods and the OPAL client only (the
+  # policy and data ConfigMaps kube-mgmt loads are the instance's own:
+  # values.cel.yaml). Enforced where the cluster's network plugin enforces
+  # NetworkPolicies; with the platform's project policy
+  # (global.okdp.network.policy) the namespace's pods stay let in by it, a
+  # union (README, "OPA's API").
+  - $for: "x in (values.enableOPA ? [opaName] : [])"
+    $each:
+      apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
+      metadata:
+        name: ${{ x }}
+        labels: ${{ okdpLabels('opa') }}
+      spec:
+        podSelector:
+          matchLabels:
+            app: ${{ x }}
+        policyTypes: [Ingress]
+        ingress:
+          - from: ${{ opaClients }}
+            ports:
+              - protocol: TCP
+                port: 8181
+  # The opal-secrets hook, a pre-install/pre-upgrade hook (Argo:
   # PreSync), so the secrets exist before the OPAL pods start; idempotent:
   # when the three Secrets exist it leaves them alone. The keys (an RSA key
   # pair, a master token and a client JWT signed by that key) cannot come
@@ -196,149 +412,7 @@ objects:
           apiGroup: rbac.authorization.k8s.io
           kind: Role
           name: ${{ x }}
-      - apiVersion: batch/v1
-        kind: Job
-        metadata:
-          name: ${{ x }}
-          labels: ${{ hookLabels }}
-          annotations:
-            helm.sh/hook: pre-install,pre-upgrade
-            helm.sh/hook-weight: "-5"
-            helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
-        spec:
-          backoffLimit: 3
-          template:
-            metadata:
-              labels: ${{ hookLabels }}
-            spec:
-              restartPolicy: Never
-              serviceAccountName: ${{ x }}
-              volumes:
-                - name: state
-                  emptyDir: {}
-                - name: shared-ssh
-                  emptyDir: {}
-                - name: shared-tokens
-                  emptyDir: {}
-              # Runs on every install, upgrade and Argo sync: decide once
-              # whether the secrets exist, so the generators (an OPAL server
-              # included) do not run, and cannot fail the sync, when there
-              # is nothing to generate. The steps are sequential init
-              # containers and the Secrets are written as a manifest, so
-              # kubectl runs without a shell: registry.k8s.io/kubectl is
-              # distroless (kubectl and kube-log-runner, which saves the
-              # output of `kubectl get` to a file).
-              initContainers:
-                - name: check
-                  image: ${{ kubectlImage }}
-                  command:
-                    - /bin/kube-log-runner
-                    - -log-file=/state/existing.yaml
-                    - -redirect-stderr=false
-                    - /bin/kubectl
-                    - get
-                    - secret
-                    - ${{ opalSecrets.ssh }}
-                    - ${{ opalSecrets.master }}
-                    - ${{ opalSecrets.client }}
-                    - --ignore-not-found
-                    - -o
-                    # The existing Secrets as an apply-able manifest (name, type, data).
-                    - 'jsonpath={range .items[*]}---{"\n"}apiVersion: v1{"\n"}kind: Secret{"\n"}metadata:{"\n"}  name: {.metadata.name}{"\n"}type: {.type}{"\n"}data: {.data}{"\n"}{end}'
-                  volumeMounts:
-                    - name: state
-                      mountPath: /state
-                - name: ssh-keygen
-                  image: linuxserver/openssh-server:version-10.2_p1-r0
-                  command:
-                    - sh
-                    - -c
-                    - |
-                      if [ "$(grep -c '^kind: Secret' /state/existing.yaml)" = 3 ]; then
-                        echo "OPAL secrets already exist, keeping them."
-                        touch /state/skip
-                        exit 0
-                      fi
-                      ssh-keygen -t 'rsa' -b '4096' -f /mnt/id_rsa -N '' -m pem -q
-                      chmod 644 /mnt/id_rsa /mnt/id_rsa.pub
-                  volumeMounts:
-                    - name: state
-                      mountPath: /state
-                    - name: shared-ssh
-                      mountPath: /mnt
-                - name: opal-token-generator
-                  image: permitio/opal-server:0.9.4
-                  env:
-                    - name: UVICORN_NUM_WORKERS
-                      value: "1"
-                    - name: SSH_SECRET_NAME
-                      value: ${{ opalSecrets.ssh }}
-                    - name: MASTER_TOKEN_SECRET_NAME
-                      value: ${{ opalSecrets.master }}
-                    - name: JWT_CLIENT_TOKEN
-                      value: ${{ opalSecrets.client }}
-                  command:
-                    - sh
-                    - -c
-                    - |
-                      set -e
-                      if [ -f /state/skip ]; then
-                        # Re-applied unchanged: the tokens are kept.
-                        cp /state/existing.yaml /opal/tokens/secrets.yaml
-                        exit 0
-                      fi
-                      export OPAL_AUTH_PRIVATE_KEY="$(cat /opal/ssh/id_rsa)"
-                      export OPAL_AUTH_PUBLIC_KEY="$(cat /opal/ssh/id_rsa.pub)"
-                      export OPAL_AUTH_MASTER_TOKEN=$(opal-server generate-secret)
-                      echo $OPAL_AUTH_MASTER_TOKEN > /opal/tokens/master-token.txt
-                      start.sh &
-                      timeout 30 sh -c "until wget -qO- http://localhost:7002/healthcheck 2>/dev/null | grep -q ok; do sleep 2; done"
-                      echo $(opal-server obtain-token $OPAL_AUTH_MASTER_TOKEN --type=client) | tr -d '\n' > /opal/tokens/jwt.txt
-                      b64() { base64 -w0 "$1"; }
-                      cat > /opal/tokens/secrets.yaml <<EOF
-                      ---
-                      apiVersion: v1
-                      kind: Secret
-                      metadata:
-                        name: $SSH_SECRET_NAME
-                      type: Opaque
-                      data:
-                        OPAL_AUTH_PRIVATE_KEY: $(b64 /opal/ssh/id_rsa)
-                        OPAL_AUTH_PUBLIC_KEY: $(b64 /opal/ssh/id_rsa.pub)
-                      ---
-                      apiVersion: v1
-                      kind: Secret
-                      metadata:
-                        name: $MASTER_TOKEN_SECRET_NAME
-                      type: Opaque
-                      data:
-                        OPAL_AUTH_MASTER_TOKEN: $(b64 /opal/tokens/master-token.txt)
-                      ---
-                      apiVersion: v1
-                      kind: Secret
-                      metadata:
-                        name: $JWT_CLIENT_TOKEN
-                      type: Opaque
-                      data:
-                        OPAL_CLIENT_TOKEN: $(b64 /opal/tokens/jwt.txt)
-                      EOF
-                  volumeMounts:
-                    - name: state
-                      mountPath: /state
-                      readOnly: true
-                    - name: shared-ssh
-                      mountPath: /opal/ssh
-                      readOnly: true
-                    - name: shared-tokens
-                      mountPath: /opal/tokens
-              containers:
-                - name: kubectl
-                  image: ${{ kubectlImage }}
-                  command: [/bin/kubectl, apply, -f, /data/secrets.yaml]
-                  volumeMounts:
-                    - name: shared-tokens
-                      mountPath: /data
-                      readOnly: true
+      - $spread: ${{ okdpJob(opalJob) }}
 
 # okdp.info.yaml: what the console lists of the instance.
 instance:
@@ -347,9 +421,9 @@ instance:
     Apache Trino provides distributed SQL query engine designed for large-scale data processing.
     Access the UI at https://${{ host }}
 
-# The connections this instance publishes: other instances of the project
-# reference it by its release name (the trino contract's naming convention,
-# x-okdp-internal, which the compiler checks these values against).
+# The connection this instance publishes, under the instance's name: the
+# other instances of the namespace reference it by that name (trino for
+# projects/demo/instances/trino/, the release demo-trino).
 provides:
   - contract: trino
     values:

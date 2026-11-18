@@ -11,29 +11,6 @@ coordinator:
       memory: 1Gi
     limits:
       cpu: "2"
-  additionalVolumes:
-    - name: cacerts
-      secret:
-        secretName: certs-bundle
-  additionalVolumeMounts:
-    - name: cacerts
-      mountPath: /cacerts
-      readOnly: true
-  additionalJVMConfig:
-    - "-Djavax.net.ssl.trustStore=/cacerts/bundle.p12"
-    - "-Djavax.net.ssl.trustStorePassword=${ENV:TRUSTSTORE_PASSWORD}"
-worker:
-  additionalVolumes:
-    - name: cacerts
-      secret:
-        secretName: certs-bundle
-  additionalVolumeMounts:
-    - name: cacerts
-      mountPath: /cacerts
-      readOnly: true
-  additionalJVMConfig:
-    - "-Djavax.net.ssl.trustStore=/cacerts/bundle.p12"
-    - "-Djavax.net.ssl.trustStorePassword=${ENV:TRUSTSTORE_PASSWORD}"
 ingress:
   enabled: true
   annotations:

@@ -1,9 +1,10 @@
 # Instance-level upstream values (upstream.trino, upstream.opa-kube-mgmt) over
-# the internal-hive setup with OPA on: overrides, list appends, an extra catalog.
+# a hive catalog on the metastore hive of the project (upstream-instances/),
+# OPA on: overrides, list appends, an extra catalog.
 s3SecretRef: creds-trino-s3
 hiveCatalogs:
   - name: bronze
-    metastore: demo-hive
+    metastore: hive
     storage: demo-storage
 enableOPA: true
 upstream:

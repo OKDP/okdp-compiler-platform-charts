@@ -1,7 +1,7 @@
-# The platform values of the test cases (--context, level 0): global.okdp,
-# as platform/platform-values.yaml gives them. A case's own are in
+# The platform values of the test cases (level 0): global.okdp,
+# as platform.yaml gives them. A case's own are in
 # <case>-platform.yaml, over them; its connections in
-# <case>-connections.yaml (--context 2:).
+# <case>-connections.yaml (connections.yaml, level 2).
 global:
   okdp:
     ingress:
@@ -21,9 +21,9 @@ global:
       httpProxy: ""
       httpsProxy: ""
       noProxy: ""
-    certificateIssuers:
-      selfSigned:
-        name: default-issuer
+    tls:
+      clusterIssuer: default-issuer
+      caBundleSecret: certs-bundle
     storageClass:
       data: standard
       workspace: standard

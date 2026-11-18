@@ -1,0 +1,4 @@
+# A database of its own, claimed by default, and a bucket of its own, a
+# claim it writes ({}: of the default class).
+storage: {}
+memoryGi: 0.5

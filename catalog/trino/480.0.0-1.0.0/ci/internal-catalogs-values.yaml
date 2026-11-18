@@ -1,0 +1,15 @@
+# Catalogs on the instances of the project, each referenced by the name of
+# its output: the metastore hive and the Polaris polaris
+# (internal-catalogs-instances/), whose realm is the Iceberg catalog's
+# warehouse; their store the bucket lake, a named claim of the project
+# (internal-catalogs-project.yaml) they claim too, its credentials Secret
+# the catalogs' S3 identity.
+hiveCatalogs:
+  - name: bronze
+    metastore: hive
+    storage: lake
+icebergCatalogs:
+  - name: silver
+    catalog: polaris
+    storage: lake
+enableOPA: false

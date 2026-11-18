@@ -1,0 +1,3 @@
+# A database of its own (claimed by default), the warehouse in the
+# bucket lake, a named claim of the project.
+storage: lake

@@ -1,0 +1,7 @@
+# error: - at '/region': 'eu-west-3\nhive.s3.aws-access-key=admin' does not match pattern '^[^\\r\\n]*$'
+# A region with a line break, the same refusal on a name rather than a URL.
+hiveCatalogs:
+  - name: raw
+    metastore: corp-hive
+    storage: lake-s3
+enableOPA: false

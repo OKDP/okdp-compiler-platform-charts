@@ -1,0 +1,6 @@
+# error: - at '/oauth2AdditionalAudiences/0': 'trino\nhttp-server.authentication.allow-insecure-over-http=false' does not match pattern '^[A-Za-z0-9][A-Za-z0-9._:/-]*$'
+# An audience with a line break: Trino's config.properties would take what
+# follows as a property of its own (server.coordinatorExtraConfig is protected
+# for that). The schema refuses it.
+numWorkers: 1
+oauth2AdditionalAudiences: ["trino\nhttp-server.authentication.allow-insecure-over-http=false"]

@@ -1,0 +1,3 @@
+# The hive metastore of the project: its hive output hive.
+service: hive-metastore
+version: 4.0.1-1.0.0

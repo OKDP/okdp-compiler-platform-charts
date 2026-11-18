@@ -5,7 +5,7 @@
   "properties": {
     "global": {
       "type": "object",
-      "description": "Platform values: the context (platform/platform-values.yaml, global.okdp), never an instance's."
+      "description": "Platform values (global.okdp): the context's layers, the platform's (platform.yaml) then its project's (project.yaml), never an instance's."
     },
     "hiveCatalogs": {
       "type": "array",
@@ -38,20 +38,25 @@
             }
           },
           "storage": {
-            "type": "string",
+            "type": [
+              "string",
+              "object"
+            ],
             "title": "Object store",
-            "description": "S3 object store connection backing this catalog.",
+            "description": "S3 object store backing this catalog: the name of a connection, of an output of another instance of the namespace, or of a named claim of the project (a bucket the metastore or the catalog's writers claim too); or a claim, a bucket of its own ({}, {class: <class>}).",
             "x-okdp-connection-ref": {
-              "contract": "s3"
+              "contract": "s3",
+              "provision": true
             },
             "not": {
+              "type": "string",
               "pattern": "\\{\\{|\\}\\}|[\\r\\n]"
             }
           },
           "s3SecretRef": {
             "type": "string",
             "title": "S3 credentials secret",
-            "description": "S3 identity used against this store. Secret with keys: accessKey, secretKey. Defaults to the instance s3SecretRef.",
+            "description": "S3 identity used against this store. Secret with keys: accessKey, secretKey. Defaults to the instance s3SecretRef, then to the storage connection's credentials Secret (secretRef).",
             "not": {
               "pattern": "\\{\\{|\\}\\}|[\\r\\n]"
             }
@@ -93,13 +98,18 @@
             }
           },
           "storage": {
-            "type": "string",
+            "type": [
+              "string",
+              "object"
+            ],
             "title": "Object store",
-            "description": "S3 object store connection backing this catalog.",
+            "description": "S3 object store backing this catalog: the name of a connection, of an output of another instance of the namespace, or of a named claim of the project (a bucket the metastore or the catalog's writers claim too); or a claim, a bucket of its own ({}, {class: <class>}).",
             "x-okdp-connection-ref": {
-              "contract": "s3"
+              "contract": "s3",
+              "provision": true
             },
             "not": {
+              "type": "string",
               "pattern": "\\{\\{|\\}\\}|[\\r\\n]"
             }
           },
@@ -131,7 +141,7 @@
           "s3SecretRef": {
             "type": "string",
             "title": "S3 credentials secret",
-            "description": "S3 identity used against this store. Secret with keys: accessKey, secretKey. Defaults to the instance s3SecretRef.",
+            "description": "S3 identity used against this store. Secret with keys: accessKey, secretKey. Defaults to the instance s3SecretRef, then to the storage connection's credentials Secret (secretRef).",
             "not": {
               "pattern": "\\{\\{|\\}\\}|[\\r\\n]"
             }
@@ -210,7 +220,7 @@
       "type": "boolean",
       "title": "Enable OPAL",
       "default": false,
-      "description": "Whether to enable OPAL. When false, OPA policies are loaded from labeled ConfigMaps by the kube-mgmt sidecar.",
+      "description": "Whether to enable OPAL. When false, OPA policies are loaded by the kube-mgmt sidecar from the ConfigMaps labelled openpolicyagent.org/policy: <release>-opa (data: openpolicyagent.org/data: <release>-opa).",
       "x-ui-group": "Authorization",
       "x-ui-order": 3,
       "x-ui-condition": {
@@ -235,7 +245,7 @@
       "type": "string",
       "title": "Policy repository",
       "default": "https://github.com/OKDP/okdp-examples.git",
-      "description": "OPA policy repo URL",
+      "description": "OPA policy repo URL. The default, OKDP's okdp-examples, is an example to try OPAL with, not a source to trust: its policy is whatever its branch holds when OPAL polls it, and decides who reads what. Set your own repository, with the branch only your policy authors write.",
       "x-ui-group": "Authorization",
       "x-ui-order": 4,
       "x-ui-advanced": true,
@@ -311,6 +321,16 @@
       "not": {
         "pattern": "\\{\\{|\\}\\}|[\\r\\n]"
       }
+    },
+    "oauth2AdditionalAudiences": {
+      "type": "array",
+      "title": "Additional OAuth2 audiences",
+      "description": "Audiences of the tokens the OAuth2 authenticator accepts beside the instance's client (http-server.authentication.oauth2.additional-audiences): the audience the control plane's SQL editor exchanges its tokens for (sqlEditor.tokenExchangeAudience of okdp-control-plane-server), which an instance whose client is registered by DCR needs.",
+      "default": [],
+      "items": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"},
+      "x-ui-group": "Authorization",
+      "x-ui-order": 9,
+      "x-ui-advanced": true
     },
     "upstream": {
       "type": "object",

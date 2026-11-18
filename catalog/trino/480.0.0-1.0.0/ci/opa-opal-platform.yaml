@@ -1,6 +1,9 @@
-# The platform values of the case opa-opal, over platform.yaml (--context, level 0).
+# The platform values of the case opa-opal, over platform.yaml (level 0): no
+# CA bundle (""), the platform's certificates chaining to a public CA.
 global:
   okdp:
+    tls:
+      caBundleSecret: ""
     proxy:
       httpProxy: http://proxy.corp:3128
       httpsProxy: ""
