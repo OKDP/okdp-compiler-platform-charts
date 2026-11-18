@@ -1,4 +1,4 @@
-# The platform values of the case explicit-proxy, over platform.yaml (--context, level 0).
+# The platform values of the case explicit-proxy, over platform.yaml (level 0).
 global:
   okdp:
     ingress:
@@ -9,6 +9,5 @@ global:
       httpProxy: http://proxy:3128
       httpsProxy: ""
       noProxy: .svc
-    certificateIssuers:
-      selfSigned:
-        name: platform-issuer
+    tls:
+      clusterIssuer: platform-issuer

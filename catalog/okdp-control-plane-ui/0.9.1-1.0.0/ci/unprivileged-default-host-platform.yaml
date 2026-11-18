@@ -1,0 +1,18 @@
+# The platform values of the case unprivileged-default-host, over platform.yaml
+# (level 0): demo is not a privileged project.
+global:
+  okdp:
+    policy:
+      privileged: []
+    ingress:
+      suffix: okdp.sandbox
+      className: nginx
+    oidc:
+      issuerUri: https://keycloak.okdp.sandbox/realms/master
+      clientId: okdp-ui
+    proxy:
+      httpProxy: ""
+      httpsProxy: ""
+      noProxy: ""
+    tls:
+      clusterIssuer: default-issuer

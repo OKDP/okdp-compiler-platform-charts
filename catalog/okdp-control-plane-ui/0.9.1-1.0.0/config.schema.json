@@ -5,7 +5,7 @@
   "properties": {
     "global": {
       "type": "object",
-      "description": "Platform values: the context (platform/platform-values.yaml, global.okdp), never an instance's."
+      "description": "Platform values (global.okdp): the context's layers, the platform's (platform.yaml) then its project's (project.yaml), never an instance's."
     },
     "imageRepository": {
       "type": "string",
@@ -20,7 +20,7 @@
       "type": "string",
       "title": "Image tag",
       "description": "Console image tag. Set explicitly so the deployed image is pinned; empty, the upstream half of the package version.",
-      "default": "0.9.0",
+      "default": "0.9.1",
       "x-ui-group": "Image",
       "x-ui-order": 2,
       "x-ui-advanced": true
@@ -28,7 +28,7 @@
     "host": {
       "type": "string",
       "title": "Host",
-      "description": "Console host. Defaults to okdp-ui.<ingress suffix>.",
+      "description": "Console host. Defaults to okdp-ui.<ingress suffix>, the platform's console, served in a privileged project only; any other project sets <label>.<namespace>.<ingress suffix>.",
       "default": "",
       "x-ui-group": "Console",
       "x-ui-order": 1

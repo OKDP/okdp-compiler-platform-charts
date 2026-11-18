@@ -1,0 +1,13 @@
+# The platform values of the test cases (level 0), under each case's own
+# <case>-platform.yaml.
+#
+# The console is the platform's own: its host is okdp-ui.<ingress suffix>,
+# which has not the form <label>.<namespace>.<suffix> the compiler
+# requires of a project that is not privileged
+# (global.okdp.policy.privileged). It installs in a privileged project, as
+# the sandbox's okdp-system is, so the cases run in one. The cases
+# unprivileged-default-host and unprivileged-host run in a project that is not.
+global:
+  okdp:
+    policy:
+      privileged: [demo]

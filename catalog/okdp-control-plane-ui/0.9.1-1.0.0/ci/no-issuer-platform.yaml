@@ -1,0 +1,8 @@
+# The platform values of the case no-issuer: no oidc.issuerUri (level 0).
+global:
+  okdp:
+    ingress:
+      suffix: okdp.sandbox
+      className: nginx
+    tls:
+      clusterIssuer: default-issuer

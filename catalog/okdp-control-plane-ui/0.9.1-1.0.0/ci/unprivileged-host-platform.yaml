@@ -1,6 +1,9 @@
-# The platform values of the case platform-defaults, over platform.yaml (--context, level 0).
+# The platform values of the case unprivileged-host, over platform.yaml
+# (level 0): demo is not a privileged project.
 global:
   okdp:
+    policy:
+      privileged: []
     ingress:
       suffix: okdp.sandbox
       className: nginx
@@ -11,6 +14,5 @@ global:
       httpProxy: ""
       httpsProxy: ""
       noProxy: ""
-    certificateIssuers:
-      selfSigned:
-        name: default-issuer
+    tls:
+      clusterIssuer: default-issuer

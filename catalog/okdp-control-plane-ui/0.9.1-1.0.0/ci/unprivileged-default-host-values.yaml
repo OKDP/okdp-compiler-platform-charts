@@ -1,0 +1,4 @@
+# error: host "okdp-ui.okdp.sandbox" is not served by demo
+# The default host, okdp-ui.<ingress suffix>, in a project that is not
+# privileged: the compiler refuses it (a console of such a project sets host
+# to <label>.<namespace>.<suffix>, case unprivileged-host).

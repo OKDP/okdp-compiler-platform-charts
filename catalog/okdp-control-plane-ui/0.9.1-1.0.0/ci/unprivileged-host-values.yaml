@@ -1,0 +1,3 @@
+# A console in a project that is not privileged: its host is
+# <label>.<namespace>.<ingress suffix>, as the compiler requires.
+host: okdp-ui.demo.okdp.sandbox
