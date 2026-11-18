@@ -1,0 +1,9 @@
+# The project's named claims (project.yaml, level 1): the metastore
+# database, of the class large, and the bucket of the catalogs, which the
+# other instances of the project may name too.
+claims:
+  polaris-db:
+    contract: database-server
+    class: large
+  catalogs:
+    contract: s3

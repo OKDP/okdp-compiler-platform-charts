@@ -1,7 +1,7 @@
 # The values of the charts of polaris, by key: they see the bindings of
 # okdp.yaml (vars). Every chart is always rendered.
 
-# The former module bootstrap: the polaris-admin chart, phase bootstrap
+# The polaris-admin chart, phase bootstrap
 # (OKDP's defaults). Both polaris-admin Jobs are post-install/post-upgrade
 # hooks (Argo: PostSync), bootstrap first (weight -5), then principals
 # (weight 5): the root credentials come from an ESO ExternalSecret, a regular
@@ -18,8 +18,7 @@ polaris-admin:
         name: ${{ values.db.secretRef.name }}
   realms: ${{ adminRealms }}
 
-# The former module principals: the polaris-admin chart again, phase
-# principals (OKDP's defaults).
+# The polaris-admin chart again, phase principals (OKDP's defaults).
 polaris-admin-principals:
   fullnameOverride: ${{ okdpFullname() }}
   principals:
@@ -31,9 +30,9 @@ polaris-admin-principals:
   # the paths polaris-admin protects.
   $merge: ${{ values.upstream[?'polaris-admin'].orValue({}) }}
 
-# The former module main: the polaris chart.
+# The polaris chart.
 polaris:
-  # The Service name the iceberg-catalog contract promises internal references.
+  # The Service the iceberg-catalog output publishes.
   fullnameOverride: ${{ fullname }}
   resources:
     limits:
@@ -50,12 +49,12 @@ polaris:
     - name: AWS_ACCESS_KEY_ID
       valueFrom:
         secretKeyRef:
-          name: ${{ values.s3SecretRef }}
+          name: ${{ s3Secret }}
           key: accessKey
     - name: AWS_SECRET_ACCESS_KEY
       valueFrom:
         secretKeyRef:
-          name: ${{ values.s3SecretRef }}
+          name: ${{ s3Secret }}
           key: secretKey
     # Polaris Database
     - name: QUARKUS_DATASOURCE_JDBC_URL
@@ -70,9 +69,13 @@ polaris:
         secretKeyRef:
           name: ${{ values.db.secretRef.name }}
           key: password
-    - name: QUARKUS_OIDC_TLS_CONFIGURATION_NAME
+    # The platform's CA bundle (caBundle), when set: the OIDC client and the
+    # JVM trust it.
+    - $if: ${{ caBundle != '' }}
+      name: QUARKUS_OIDC_TLS_CONFIGURATION_NAME
       value: "oidc"
-    - name: QUARKUS_TLS__OIDC__TRUST_STORE_PEM_CERTS
+    - $if: ${{ caBundle != '' }}
+      name: QUARKUS_TLS__OIDC__TRUST_STORE_PEM_CERTS
       value: "/cacerts/ca.crt"
     # OIDC, Enable multi-tenancy (Multiple realms)
     - name: QUARKUS_OIDC_TENANT-ENABLED
@@ -83,11 +86,22 @@ polaris:
           name: ${{ platform.oidcClientSecret }}
           key: client_id
     # Trust The CA
-    - name: JAVA_TOOL_OPTIONS
+    - $if: ${{ caBundle != '' }}
+      name: JAVA_TOOL_OPTIONS
       value: >-
         -Djavax.net.ssl.trustStore=/cacerts/bundle.p12
         -Djavax.net.ssl.trustStoreType=PKCS12
         -Djavax.net.ssl.trustStorePassword=
+  # The platform's CA bundle, when set, mounted at /cacerts.
+  extraVolumes:
+    - $if: ${{ caBundle != '' }}
+      name: cacerts
+      secret:
+        secretName: ${{ caBundle }}
+  extraVolumeMounts:
+    - $if: ${{ caBundle != '' }}
+      name: cacerts
+      mountPath: /cacerts
   realmContext:
     realms:
       - ${{ str(values.realm) }}
@@ -112,7 +126,7 @@ polaris:
       - hosts: ["${{ host }}"]
         secretName: ${{ release.name }}-tls
 
-# The former module console: the polaris-console chart. dcr mode: its client
+# The polaris-console chart. dcr mode: its client
 # id is read from its own DCR client's Secret.
 polaris-console:
   fullnameOverride: ${{ release.name }}-polaris-console

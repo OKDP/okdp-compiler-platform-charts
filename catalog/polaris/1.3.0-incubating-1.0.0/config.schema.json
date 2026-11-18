@@ -5,7 +5,7 @@
   "properties": {
     "global": {
       "type": "object",
-      "description": "Platform values: the context (platform/platform-values.yaml, global.okdp), never an instance's."
+      "description": "Platform values (global.okdp): the context's layers, the platform's (platform.yaml) then its project's (project.yaml), never an instance's."
     },
     "memoryGi": {
       "type": "number",
@@ -19,15 +19,29 @@
       "x-ui-advanced": true
     },
     "db": {
-      "type": "string",
+      "type": [
+        "string",
+        "object"
+      ],
       "title": "Metadata database",
-      "description": "Connection to the PostgreSQL server hosting the Polaris metastore database.",
+      "description": "The PostgreSQL database hosting the Polaris metastore: a database of its own by default ({}, a claim of the default class of database-server connections), a claim written out ({class: <class>} or {provider: <namespace>/<instance>}), or the name of a connection, of an output of another instance of the namespace, or of a named claim of the project. Required of it: the postgresql engine and its credentials Secret (secretRef: username, password).",
       "x-okdp-connection-ref": {
-        "contract": "database-server"
+        "contract": "database-server",
+        "provision": true,
+        "require": {
+          "properties": {
+            "engine": {
+              "const": "postgresql"
+            }
+          },
+          "required": [
+            "secretRef"
+          ]
+        }
       },
       "x-ui-group": "Catalog",
       "x-ui-order": 1,
-      "default": ""
+      "default": {}
     },
     "realm": {
       "type": "string",
@@ -72,11 +86,15 @@
       }
     },
     "storage": {
-      "type": "string",
+      "type": [
+        "string",
+        "object"
+      ],
       "title": "Object store",
-      "description": "Connection to the S3-compatible object store backing the catalogs.",
+      "description": "The S3-compatible object store backing the catalogs: the name of a connection, of an output of another instance of the namespace, or of a named claim of the project; or a claim ({}, {class: <class>}), a bucket of its own for catalogs located in it, its identity's credentials the connection's secretRef.",
       "x-okdp-connection-ref": {
-        "contract": "s3"
+        "contract": "s3",
+        "provision": true
       },
       "x-ui-group": "Storage",
       "x-ui-order": 1,
@@ -85,7 +103,7 @@
     "s3SecretRef": {
       "type": "string",
       "title": "S3 credentials secret",
-      "description": "Secret with keys accessKey/secretKey, this consumer's own S3 identity (STS and catalog-side Iceberg metadata operations).",
+      "description": "Secret with keys accessKey/secretKey, this consumer's own S3 identity (STS and catalog-side Iceberg metadata operations). Empty: the storage connection's credentials Secret (secretRef).",
       "x-ui-group": "Storage",
       "x-ui-order": 2,
       "default": ""
@@ -144,8 +162,7 @@
   },
   "required": [
     "db",
-    "storage",
-    "s3SecretRef"
+    "storage"
   ],
   "additionalProperties": false,
   "definitions": {

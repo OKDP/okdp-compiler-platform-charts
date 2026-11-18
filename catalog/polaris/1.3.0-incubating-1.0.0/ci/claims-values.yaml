@@ -1,0 +1,5 @@
+# A database of its own by default, claimed of the default class
+# (ci/platform.yaml), and a bucket of its own for its catalogs, claimed too:
+# its identity, the connection's credentials Secret, is Polaris's.
+storage: {}
+realm: SANDBOX

@@ -1,0 +1,4 @@
+# The project's named claims (named-claims-project.yaml): the database
+# polaris-db, the bucket catalogs.
+db: polaris-db
+storage: catalogs

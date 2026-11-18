@@ -1,5 +1,5 @@
-# error: polaris: db: connection "demo-db-mysql" has engine "mysql", Polaris is deployed with PostgreSQL only
-# A MySQL metastore database: refused.
+# error: db (connection "demo-db-mysql"): the connection does not meet the package's requirement (x-okdp-connection-ref.require)
+# A MySQL metastore database: refused, Polaris requires a postgresql one.
 db: demo-db-mysql
 storage: demo-storage
 s3SecretRef: creds-polaris-s3

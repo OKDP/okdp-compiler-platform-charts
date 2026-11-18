@@ -1,17 +1,19 @@
 # OKDP's part of polaris: the platform values it needs, OKDP's defaults of its
-# upstream charts and what an instance may override; then its OAuth clients
-# (the former module oidc-dcr), OKDP's own objects, what the instance
+# upstream charts and what an instance may override; then its OAuth clients,
+# OKDP's own objects, what the instance
 # publishes and the connection it provides. values.cel.yaml computes the
 # charts' values. The db and storage references arrive resolved (their
 # x-okdp-connection-ref in config.schema.json): values.db holds the
-# database-server contract fields and secretRef, values.storage the s3 ones.
+# database-server contract fields and secretRef, a database of its own by
+# default (a claim the provider of its class provisions), values.storage the
+# s3 ones.
 
 roles: [data-catalog, iceberg-catalog]
 dependsOn: [identity, storage, database-server, ingress]
 require:
   - ingress.suffix
   - ingress.className
-  - certificateIssuers.selfSigned.name
+  - tls.clusterIssuer
   - oidc.issuerUri
 defaults:
   polaris: polaris.defaults.yaml
@@ -61,12 +63,22 @@ upstream:
               ingress.enabled, ingress.className, ingress.hosts, ingress.tls]
 
 vars:
-  # Polaris server Service: <release>-polaris (iceberg-catalog contract convention).
+  # The platform's CA bundle, the Secret global.okdp.tls.caBundleSecret ("":
+  # none, the platform's certificates chain to a public CA).
+  caBundle: ${{ global.okdp.?tls.?caBundleSecret.orValue('') }}
+  # Polaris server Service: <release>-polaris, what the iceberg-catalog
+  # output publishes.
   fullname: ${{ okdpFullname('polaris') }}
-  # Public API host: polaris-<namespace>.<ingress suffix>.
-  host: polaris-${{ release.namespace }}.${{ global.okdp.ingress.suffix }}
-  # Console host: polaris-console-<namespace>.<ingress suffix>.
-  consoleHost: polaris-console-${{ release.namespace }}.${{ global.okdp.ingress.suffix }}
+  # Instance name: the release name without its project prefix (the console
+  # prefixes instances with their project, which would double it in the
+  # host).
+  instance: >-
+    ${{ release.name.startsWith(release.namespace + '-')
+        ? release.name.substring(size(release.namespace) + 1) : release.name }}
+  # Public API host: <instance>.<namespace>.<ingress suffix>.
+  host: ${{ instance }}.${{ release.namespace }}.${{ global.okdp.ingress.suffix }}
+  # Console host: <instance>-console.<namespace>.<ingress suffix>.
+  consoleHost: ${{ instance }}-console.${{ release.namespace }}.${{ global.okdp.ingress.suffix }}
   apiUrl: https://${{ host }}
   consoleUrl: https://${{ consoleHost }}
   # In-cluster base URL of the Polaris API.
@@ -79,7 +91,7 @@ vars:
   # Login scope of the console (the oidc-dcr registration must grant it, openid aside).
   consoleScope: ${{ platform.oidc.scope }} roles offline_access
   # The metastore database (PostgreSQL only: the JDBC URL and the image
-  # driver, checked below); "" while db is unset.
+  # driver, required of the connection); "" while db is unset.
   jdbcUrl: >-
     ${{ type(values.db) == map
         ? 'jdbc:postgresql://' + str(values.db.host) + ':' + str(values.db.port) + '/' + str(values.db.dbName)
@@ -95,29 +107,28 @@ vars:
           clientIdKey: client_id
           clientSecretKey: client_secret
       principals: ${{ values.?principals.orValue([]) }}
+  # The S3 identity: s3SecretRef, else the storage connection's credentials
+  # Secret.
+  s3Secret: >-
+    ${{ first([values.s3SecretRef, type(values.storage) == map ? values.storage.?secretRef.name.orValue('') : '']) }}
   # Kept on uninstall (Helm) and on prune (Argo CD).
   keep:
     helm.sh/resource-policy: keep
     argocd.argoproj.io/sync-options: Delete=false
 
 errors:
-  # An unset reference stays "".
+  # An unset reference stays "". The database's engine and credentials are
+  # required of the connection (require).
   - $if: ${{ type(values.db) != map }}
     $value: "polaris: db: no database-server connection given"
   - $if: ${{ type(values.storage) != map }}
     $value: "polaris: storage: no s3 connection given"
-  - $if: ${{ type(values.db) == map && str(values.db.engine) != 'postgresql' }}
+  - $if: ${{ type(values.storage) == map && s3Secret == '' }}
     $value: >-
-      polaris: db: connection "${{ values.db.okdp.ref }}" has engine "${{ str(values.db.engine) }}",
-      Polaris is deployed with PostgreSQL only
-  - $if: ${{ type(values.db) == map && !has(values.db.secretRef) }}
-    $value: >-
-      polaris: db: connection "${{ values.db.okdp.ref }}" has no secretRef:
-      Polaris needs a Secret with the keys username and password
-  - $if: ${{ values.?s3SecretRef.orValue('') == '' }}
-    $value: "polaris: s3SecretRef is required: a Secret with the keys accessKey and secretKey, this instance's own S3 identity"
+      polaris: s3SecretRef is required: a Secret with the keys accessKey and secretKey, this
+      instance's own S3 identity, connection "${{ values.storage.okdp.ref }}" has no secretRef
 
-# The OAuth clients (the former module oidc-dcr), registered by dynamic client
+# The OAuth clients, registered by dynamic client
 # registration in dcr mode (global.okdp.oidc.clientProvisioning: dcr): the
 # compiler adds one oidc-dcr chart per client. Nothing in existing mode.
 oidcClients:
@@ -137,7 +148,7 @@ oidcClients:
 
 # OKDP's own objects, rendered by the umbrella (okdp.objects.yaml).
 objects:
-  # Former module internal-secrets: the root credentials of the realm
+  # The root credentials of the realm
   # (client_id: root, a generated client_secret), an ESO Password generator
   # and the ExternalSecret writing the Secret, generated once (refreshInterval
   # 0). Kept when the release goes away (was keep: true): the bootstrapped
@@ -156,9 +167,9 @@ instance:
     Access the UI at ${{ consoleUrl }}
     Realm ${{ values.realm }}, root credentials in Secret ${{ rootSecret }} (keys client_id and client_secret)
 
-# The connection this instance publishes: other instances of the project
-# reference it by its release name (the iceberg-catalog contract's naming
-# convention, x-okdp-internal, which the compiler checks these values against).
+# The connection this instance publishes, under the instance's name: the
+# other instances of the namespace reference it by that name (polaris for
+# projects/demo/instances/polaris/, the release demo-polaris).
 provides:
   - contract: iceberg-catalog
     values:

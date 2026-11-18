@@ -56,10 +56,3 @@ ingress:
   enabled: true
   annotations:
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-extraVolumes:
-  - name: cacerts
-    secret:
-      secretName: certs-bundle
-extraVolumeMounts:
-  - name: cacerts
-    mountPath: /cacerts
