@@ -3,9 +3,9 @@
 # whose credentialsSecret lacks a key.
 storage: demo-storage
 s3SecretRef: creds-examples-s3
-trino: demo-trino
+trino: shared-trino
 trinoOidcSecretRef: creds-examples-trino-oauth2
-polaris: demo-polaris
+polaris: shared-polaris
 polarisRealms:
   realms:
     - name: sandbox

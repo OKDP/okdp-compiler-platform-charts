@@ -1,0 +1,2 @@
+# No catalog, OPA off.
+enableOPA: false

@@ -1,5 +1,5 @@
-# The values of the okdp-examples chart (the former KuboCD module main),
-# computed from the parameters, the platform values and the connections;
+# The values of the okdp-examples chart, computed from the parameters, the
+# platform values and the connections;
 # they see the vars of okdp.yaml. The shell's $VAR and ${VAR} stay literal.
 okdp-examples:
   fullnameOverride: ${{ release.name }}
@@ -13,12 +13,12 @@ okdp-examples:
     - name: S3_ACCESS_KEY
       valueFrom:
         secretKeyRef:
-          name: ${{ values.s3SecretRef }}
+          name: ${{ s3Secret }}
           key: accessKey
     - name: S3_SECRET_KEY
       valueFrom:
         secretKeyRef:
-          name: ${{ values.s3SecretRef }}
+          name: ${{ s3Secret }}
           key: secretKey
 
     - name: BRONZE_BUCKET
@@ -58,12 +58,19 @@ okdp-examples:
       value: ${{ global.okdp.oidc.issuerUri }}
     - name: POLARIS_URL
       value: ${{ polarisEndpointUrl }}
-    - name: CA_CERT_PATH
+    # The platform's CA bundle, when set (caBundle), mounted at /cacerts:
+    # polaris-admin and curl trust its ca.crt, the trino CLI its bundle.p12.
+    - $if: ${{ caBundle != '' }}
+      name: CA_CERT_PATH
       value: /cacerts/ca.crt
-    - name: CURL_CA_BUNDLE
+    - $if: ${{ caBundle != '' }}
+      name: CURL_CA_BUNDLE
       value: /cacerts/ca.crt
     - name: TRUSTSTORE_PASSWORD
       value: ""
+    - $if: ${{ caBundle != '' }}
+      name: TRINO_TRUSTSTORE_ARGS
+      value: --truststore-path /cacerts/bundle.p12 --truststore-type PKCS12 --truststore-password=
     - $for: r in realms
       $each:
         - name: ${{ r.prefix }}_POLARIS_OIDC_CLIENT_ID
@@ -86,12 +93,14 @@ okdp-examples:
       memory: ${{ str(values.memoryGi * 2.0) }}Gi
 
   extraVolumes:
-    - name: cacerts
+    - $if: ${{ caBundle != '' }}
+      name: cacerts
       secret:
-        secretName: certs-bundle
+        secretName: ${{ caBundle }}
 
   extraVolumeMounts:
-    - name: cacerts
+    - $if: ${{ caBundle != '' }}
+      name: cacerts
       mountPath: /cacerts
 
   extraFiles:

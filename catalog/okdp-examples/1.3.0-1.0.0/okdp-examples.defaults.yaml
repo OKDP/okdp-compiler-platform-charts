@@ -88,9 +88,7 @@ commands:
       trino --server $TRINO_SERVER_URL \
             --access-token "$ACCESS_TOKEN" \
             --user "$EXAMPLES_TRINO_CLIENT_ID" \
-            --truststore-path /cacerts/bundle.p12 \
-            --truststore-type PKCS12 \
-            --truststore-password "$TRUSTSTORE_PASSWORD" <<SQL
+            ${TRINO_TRUSTSTORE_ARGS:-} <<SQL
         CREATE SCHEMA IF NOT EXISTS bronze.nyc_tlc;
 
         CREATE TABLE IF NOT EXISTS bronze.nyc_tlc.yellow (
@@ -181,9 +179,7 @@ commands:
       trino --server $TRINO_SERVER_URL \
             --access-token "$ACCESS_TOKEN" \
             --user "$EXAMPLES_TRINO_CLIENT_ID" \
-            --truststore-path /cacerts/bundle.p12 \
-            --truststore-type PKCS12 \
-            --truststore-password "$TRUSTSTORE_PASSWORD" <<SQL
+            ${TRINO_TRUSTSTORE_ARGS:-} <<SQL
         CALL bronze.system.sync_partition_metadata(
           schema_name => 'nyc_tlc',
           table_name => 'yellow',
@@ -214,9 +210,7 @@ commands:
       trino --server $TRINO_SERVER_URL \
             --access-token "$ACCESS_TOKEN" \
             --user "$EXAMPLES_TRINO_CLIENT_ID" \
-            --truststore-path /cacerts/bundle.p12 \
-            --truststore-type PKCS12 \
-            --truststore-password "$TRUSTSTORE_PASSWORD" <<SQL
+            ${TRINO_TRUSTSTORE_ARGS:-} <<SQL
         SHOW SCHEMAS FROM bronze;
 
         SHOW TABLES FROM bronze.nyc_tlc;

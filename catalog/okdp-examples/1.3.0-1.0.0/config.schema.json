@@ -5,7 +5,7 @@
   "properties": {
     "global": {
       "type": "object",
-      "description": "Platform values: the context (platform/platform-values.yaml, global.okdp), never an instance's."
+      "description": "Platform values (global.okdp): the context's layers, the platform's (platform.yaml) then its project's (project.yaml), never an instance's."
     },
     "cpu": {
       "type": "number",
@@ -30,7 +30,7 @@
     "storage": {
       "type": "string",
       "title": "Object store",
-      "description": "S3 store where the medallion buckets live.",
+      "description": "S3 store where the medallion buckets live: the name of a connection, or of an output of another instance of the namespace. The job creates the buckets with its own identity: no claim, a claimed bucket's identity reaches its bucket only.",
       "x-okdp-connection-ref": {
         "contract": "s3"
       },
@@ -41,7 +41,7 @@
     "s3SecretRef": {
       "type": "string",
       "title": "S3 credentials secret",
-      "description": "S3 identity of the seed job. Secret with keys: accessKey, secretKey.",
+      "description": "S3 identity of the seed job, one that creates buckets. Secret with keys: accessKey, secretKey. Empty: the storage connection's credentials Secret (secretRef).",
       "x-ui-group": "Connections",
       "x-ui-order": 2,
       "default": ""
@@ -49,7 +49,7 @@
     "trino": {
       "type": "string",
       "title": "Trino",
-      "description": "Trino instance carrying the bronze catalog.",
+      "description": "Trino carrying the bronze catalog: the name of a connection, or of the trino output of an instance of the namespace (its instance's name).",
       "x-okdp-connection-ref": {
         "contract": "trino"
       },
@@ -68,7 +68,7 @@
     "polaris": {
       "type": "string",
       "title": "Iceberg REST catalog",
-      "description": "Polaris instance where the silver and gold catalogs are provisioned.",
+      "description": "Polaris where the silver and gold catalogs are provisioned: the name of a connection, or of the iceberg-catalog output of an instance of the namespace (its instance's name).",
       "x-okdp-connection-ref": {
         "contract": "iceberg-catalog"
       },
@@ -165,7 +165,6 @@
   },
   "required": [
     "storage",
-    "s3SecretRef",
     "trino",
     "trinoOidcSecretRef",
     "polaris",

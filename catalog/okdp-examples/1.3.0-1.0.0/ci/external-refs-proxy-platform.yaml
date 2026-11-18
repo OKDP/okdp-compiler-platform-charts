@@ -1,4 +1,4 @@
-# The platform values of the case external-refs-proxy, over platform.yaml (--context, level 0).
+# The platform values of the case external-refs-proxy, over platform.yaml (level 0).
 global:
   okdp:
     ingress:

@@ -1,0 +1,3 @@
+# The Polaris of the project: its iceberg-catalog output polaris.
+service: polaris
+version: 1.3.0-incubating-1.0.0

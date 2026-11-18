@@ -1,0 +1,4 @@
+# A database of its own (claimed by default), the catalogs on the
+# platform S3 store.
+storage: demo-storage
+realm: sandbox

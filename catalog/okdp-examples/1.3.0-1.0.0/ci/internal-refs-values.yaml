@@ -1,10 +1,12 @@
-# The demo project: internal trino and polaris releases (demo-trino,
-# demo-polaris), the platform S3 store as a connection file, one realm.
+# The demo project: the trino and polaris instances of the project
+# (internal-refs-instances/), referenced by the names of their outputs
+# (trino, polaris), the platform S3 store as a connection file,
+# one realm.
 storage: demo-storage
 s3SecretRef: creds-examples-s3
-trino: demo-trino
+trino: trino
 trinoOidcSecretRef: creds-examples-trino-oauth2
-polaris: demo-polaris
+polaris: polaris
 polarisRealms:
   realms:
     - name: sandbox

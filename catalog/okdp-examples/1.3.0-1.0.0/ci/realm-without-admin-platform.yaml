@@ -1,4 +1,4 @@
-# The platform values of the case realm-without-admin, over platform.yaml (--context, level 0).
+# The platform values of the case realm-without-admin, over platform.yaml (level 0).
 global:
   okdp:
     ingress:
@@ -10,6 +10,6 @@ global:
       httpProxy: ""
       httpsProxy: ""
       noProxy: ""
-    certificateIssuers:
-      selfSigned:
-        name: default-issuer
+    tls:
+      clusterIssuer: default-issuer
+      caBundleSecret: certs-bundle

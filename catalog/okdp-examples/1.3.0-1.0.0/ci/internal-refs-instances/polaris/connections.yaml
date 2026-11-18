@@ -1,0 +1,10 @@
+# The connections of the Polaris of the case: its own (connections.yaml, level 2).
+connections:
+  demo-storage:
+    contract: s3
+    apiUrl: https://storage-default-api.okdp.sandbox
+    internalUrl: http://storage-s3.default.svc.cluster.local:8333
+    region: us-east-1
+    pathStyle: true
+    secretRef:
+      name: creds-polaris-s3
