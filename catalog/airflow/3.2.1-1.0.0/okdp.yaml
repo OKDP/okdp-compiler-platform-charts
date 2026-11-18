@@ -1,8 +1,7 @@
 # OKDP's part of airflow: the platform values it needs, OKDP's defaults of
 # its upstream chart and what an instance may override, then the mapping
-# besides the chart's values (values.cel.yaml): its OAuth client (the former
-# module oidc-dcr), OKDP's own objects (the former module internal-secrets)
-# and what the instance publishes.
+# besides the chart's values (values.cel.yaml): its OAuth client, OKDP's
+# own objects and what the instance publishes.
 
 roles: [airflow]
 dependsOn: [external-secrets, database-server, ingress, storage]
@@ -11,7 +10,7 @@ dependsOn: [external-secrets, database-server, ingress, storage]
 require:
   - ingress.suffix
   - ingress.className
-  - certificateIssuers.selfSigned.name
+  - tls.clusterIssuer
 defaults:
   airflow: airflow.defaults.yaml
 upstream:
@@ -22,7 +21,9 @@ upstream:
     # appended to: an instance adds variables with env, secret or extraEnvFrom
     # instead), the ingress host registered with the identity provider, the
     # metadata database and generated secrets (data, the *SecretName keys,
-    # never a literal key in the values). The switches kept for determinism:
+    # never a literal key in the values; the built-in connection variables,
+    # off when the connection string is built from the db connection). The
+    # switches kept for determinism:
     # the chart's fernet-key, api-secret-key and jwt-secret Secret templates
     # call randAlphaNum unless their *SecretName points at the ESO-generated
     # <release>-internal; its webserver-secret-key one renders for Airflow 2
@@ -37,7 +38,8 @@ upstream:
               ingress.apiServer.ingressClassName, ingress.apiServer.host, ingress.apiServer.hosts,
               ingress.apiServer.tls, data, fernetKey, fernetKeySecretName, apiSecretKey,
               apiSecretKeySecretName, jwtSecret, jwtSecretName, webserverSecretKey,
-              webserverSecretKeySecretName, redis.enabled, postgresql.enabled,
+              webserverSecretKeySecretName, enableBuiltInSecretEnvVars.AIRFLOW__DATABASE__SQL_ALCHEMY_CONN,
+              enableBuiltInSecretEnvVars.AIRFLOW_CONN_AIRFLOW_DB, redis.enabled, postgresql.enabled,
               migrateDatabaseJob.enabled, migrateDatabaseJob.useHelmHooks,
               migrateDatabaseJob.jobAnnotations, createUserJob.enabled]
     # The CA bundle volume and mount, and the proxy variables of git-sync: an
@@ -45,19 +47,53 @@ upstream:
     append: [volumes, volumeMounts, dags.gitSync.env]
 
 vars:
-  # Public host: airflow-<namespace>.<ingress suffix>.
-  host: airflow-${{ release.namespace }}.${{ global.okdp.ingress.suffix }}
+  # Instance name: the release name without its project prefix (the console
+  # prefixes instances with their project, which would double it in the
+  # host).
+  instance: >-
+    ${{ release.name.startsWith(release.namespace + '-')
+        ? release.name.substring(size(release.namespace) + 1) : release.name }}
+  # Public host: <instance>.<namespace>.<ingress suffix>.
+  host: ${{ instance }}.${{ release.namespace }}.${{ global.okdp.ingress.suffix }}
   # Generated internal secrets (api-secret-key, jwt-secret, fernet-key): <release>-internal.
   internalSecret: ${{ okdpFullname('internal') }}
   # OIDC sign-in, global.okdp.oidc.enabled (true by default).
   oidcEnabled: ${{ platform.oidc.?enabled.orValue(false) == true }}
   # Login scope, offline_access included (the oidc-dcr registration must grant it).
   scope: ${{ platform.oidc.scope }} offline_access
+  # The metadata database ({} while db is unset). Without metadataSecret, the
+  # SQLAlchemy connection string is built from it: the pods read the user and
+  # the password from its credentials Secret into variables, which the
+  # connection string expands (Kubernetes' $(VAR)); the chart's own
+  # connection variables, read from metadataSecret, are then off.
+  db: '${{ type(values.db) == map ? values.db : {} }}'
+  dbConnection: ${{ first([values.metadataSecret]) == '' && db.size() > 0 }}
+  dbUrl: >-
+    ${{ db.size() == 0 ? '' : (str(db.engine) == 'mysql' ? 'mysql+mysqldb' : 'postgresql')
+        + '://$(AIRFLOW_DB_USER):$(AIRFLOW_DB_PASSWORD)@' + str(db.host) + ':' + str(db.port) + '/' + str(db.dbName) }}
+  dbEnv: |
+    - name: AIRFLOW_DB_USER
+      valueFrom:
+        secretKeyRef:
+          name: ${{ quote(db.?secretRef.name.orValue('')) }}
+          key: username
+    - name: AIRFLOW_DB_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: ${{ quote(db.?secretRef.name.orValue('')) }}
+          key: password
+    - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+      value: ${{ quote(dbUrl) }}
+    - name: AIRFLOW_CONN_AIRFLOW_DB
+      value: ${{ quote(dbUrl) }}
   # The DAGs' object store: the s3 connection (storage, checked below),
-  # internalUrl when it has one.
+  # internalUrl when it has one; its identity, s3SecretRef, else the
+  # connection's credentials Secret.
   s3Endpoint: >-
     ${{ type(values.storage) == map ? first([values.storage.?internalUrl.orValue(''), values.storage.apiUrl]) : '' }}
   s3Region: "${{ type(values.storage) == map ? values.storage.region : '' }}"
+  s3Secret: >-
+    ${{ first([values.s3SecretRef, type(values.storage) == map ? values.storage.?secretRef.name.orValue('') : '']) }}
   # extraEnv: a templated string in the upstream chart (tpl), so a YAML text;
   # the strings are written quoted (Helm's quote), the upstream chart pastes
   # them into its pod specs. The OIDC client and endpoints, with OIDC enabled.
@@ -82,7 +118,7 @@ vars:
       value: ${{ quote(platform.oidc.?issuerUri.orValue('') + '/.well-known/openid-configuration') }}
     - name: AIRFLOW_OIDC_SCOPE
       value: ${{ quote(scope.replace(' ', '+')) }}
-  # The object store and the CA bundle, always.
+  # The object store, always.
   commonEnv: |
     - name: AWS_ENDPOINT_URL_S3
       value: ${{ quote(s3Endpoint) }}
@@ -91,26 +127,40 @@ vars:
     - name: AWS_ACCESS_KEY_ID
       valueFrom:
         secretKeyRef:
-          name: ${{ quote(values.s3SecretRef) }}
+          name: ${{ quote(s3Secret) }}
           key: accessKey
     - name: AWS_SECRET_ACCESS_KEY
       valueFrom:
         secretKeyRef:
-          name: ${{ quote(values.s3SecretRef) }}
+          name: ${{ quote(s3Secret) }}
           key: secretKey
     - name: INSECURE_VERIFY_TLS
       value: ${{ first([platform.oidc.?insecureSkipVerify.orValue(false)]) != '' ? '"false"' : '"true"' }}
+  # The platform's CA bundle, the Secret global.okdp.tls.caBundleSecret ("":
+  # none, the platform's certificates chain to a public CA): mounted at
+  # /cacerts (values.cel.yaml), and these variables, when set.
+  caBundle: ${{ global.okdp.?tls.?caBundleSecret.orValue('') }}
+  caEnv: |
     - name: REQUESTS_CA_BUNDLE
       value: "/cacerts/ca.crt"
     - name: SSL_CERT_FILE
       value: "/cacerts/ca.crt"
     - name: CURL_CA_BUNDLE
       value: "/cacerts/ca.crt"
-  # AUTH_ROLES_MAPPING entries of the API server config, by OIDC group (sorted,
-  # as Helm ranges over a map): the group quoted, its roles as JSON.
+  # Who signs in, and with which Airflow roles: the groups of the project
+  # and of the platform's administrators (platform.access), the viewers
+  # Viewer, the editors User, the admins Admin (the highest role of a group),
+  # then oidcRoleMapping over them, a group of it replacing its roles. The
+  # realm's own roles are no group of a project: a user of another project
+  # is in none of these and is refused at the sign-in (values.cel.yaml).
+  roleGroups: >-
+    ${{ (platform.access.viewers.filter(g, !(g in values.oidcRoleMapping))
+          + values.oidcRoleMapping.transformList(k, v, k)).sort() }}
+  # AUTH_ROLES_MAPPING entries of the API server config, by OIDC group
+  # (sorted): the group quoted, its roles as JSON.
   roleMapping: >-
-    ${{ values.oidcRoleMapping.transformList(k, v, k).sort()
-        .map(g, quote(g) + ': ' + toJson(values.oidcRoleMapping[g]) + ',') }}
+    ${{ roleGroups.map(g, quote(g) + ': ' + toJson(g in values.oidcRoleMapping ? values.oidcRoleMapping[g]
+          : g in platform.access.admins ? ['Admin'] : g in platform.access.editors ? ['User'] : ['Viewer']) + ',') }}
   # dags.gitSync: dagsGitSync without credentialsSecret, then ref mirrored
   # onto branch (git-sync v4 lets the deprecated GIT_SYNC_BRANCH, fed by the
   # chart default, override GITSYNC_REF; done even when the caller set both,
@@ -146,25 +196,30 @@ vars:
     argocd.argoproj.io/sync-wave: "1"
 
 errors:
+  # Nobody may sign in: the project gives no group a role (access: {}) and
+  # oidcRoleMapping names none, the platform's administrators apart.
+  - $if: ${{ oidcEnabled && roleGroups.size() == 0 }}
+    $value: "airflow: no group may sign in: the project's access gives no group a role and oidcRoleMapping names none (global.okdp.access.admins, the platform's administrators, are none either)"
   # The OIDC endpoints, required with OIDC enabled.
   - $spread: >-
       ${{ ['issuerUri', 'authUrl', 'tokenUrl'].filter(k, oidcEnabled && platform.oidc[?k].orValue(null) in [null, ''])
-          .map(k, 'global.okdp.oidc.' + k + ' is required. It is a platform value: set it in platform/platform-values.yaml') }}
-  # The connections: a reference left empty. The db connection only gates
-  # the deployment: Airflow reads metadataSecret.
+          .map(k, 'global.okdp.oidc.' + k + ' is required. It is a platform value: set it in platform.yaml') }}
+  # The connections: a reference left empty. The db connection's credentials
+  # are required of it (require); with metadataSecret, it only gates the
+  # deployment.
   - $if: ${{ type(values.db) != map }}
     $value: "airflow: db: no database-server connection given"
   - $if: ${{ type(values.storage) != map }}
     $value: "airflow: storage: no s3 connection given"
-  - $if: ${{ first([values.metadataSecret]) == '' }}
-    $value: "airflow: metadataSecret is required: a Secret with the key connection holding the SQLAlchemy connection string"
-  - $if: ${{ first([values.s3SecretRef]) == '' }}
-    $value: "airflow: s3SecretRef is required: a Secret with the keys accessKey and secretKey"
+  - $if: ${{ type(values.storage) == map && s3Secret == '' }}
+    $value: >-
+      airflow: s3SecretRef is required: a Secret with the keys accessKey and secretKey,
+      connection "${{ values.storage.okdp.ref }}" has no secretRef
   - $if: >-
       ${{ first([gitCredentials]) != '' && (type(gitCredentials) != map || first([gitCredentials.?name.orValue('')]) == '') }}
     $value: "airflow: dagsGitSync.credentialsSecret.name is required"
 
-# The OAuth client (the former module oidc-dcr), registered by dynamic client
+# The OAuth client, registered by dynamic client
 # registration in dcr mode (global.okdp.oidc.clientProvisioning: dcr): the
 # compiler adds the chart oidc-dcr (Job <release>-oidc-dcr), which writes the
 # Secret platform.oidcClientSecret (<release>-<namespace>-dcr). Nothing in
@@ -176,7 +231,7 @@ oidcClients:
 
 # OKDP's own objects, rendered by the umbrella (okdp.objects.yaml).
 objects:
-  # The internal Secret (former module internal-secrets) plus the Fernet key
+  # The internal Secret plus the Fernet key
   # the upstream chart minted in a pre-install hook with randAlphaNum: one ESO
   # Password generator per key and the ExternalSecret writing the Secret,
   # generated once (refreshInterval 0). fernet-key is the base64 of 32

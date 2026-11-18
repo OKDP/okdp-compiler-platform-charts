@@ -1,0 +1,7 @@
+# The project's groups (project.yaml, level 1): they are the people who sign
+# in to Airflow, with no oidcRoleMapping: analysts Viewer, okdp-project-demo
+# User, demo-leads and the platform's platform_admin Admin.
+access:
+  okdp-project-demo: editor
+  demo-leads: admin
+  analysts: viewer

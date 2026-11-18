@@ -1,0 +1,5 @@
+# The project's named claims (project.yaml, level 1): the bucket lake, the
+# object store of the project's services.
+claims:
+  lake:
+    contract: s3

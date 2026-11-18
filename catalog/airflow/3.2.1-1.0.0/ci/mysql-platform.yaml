@@ -1,0 +1,11 @@
+# The platform values of the case mysql, over platform.yaml (level 0).
+global:
+  okdp:
+    ingress:
+      suffix: example.org
+      className: nginx
+    tls:
+      clusterIssuer: letsencrypt
+      caBundleSecret: certs-bundle
+    oidc:
+      enabled: false

@@ -1,0 +1,6 @@
+# A metadata database of its own, claimed by default (ci/platform.yaml of the
+# repository): the connection string built from its connection and
+# credentials (no metadataSecret). The DAGs' store, the bucket lake, a
+# named claim of the project (claims-project.yaml), its identity the
+# claim's credentials Secret (no s3SecretRef). OIDC off.
+storage: lake

@@ -1,0 +1,20 @@
+# The platform values of the case project-groups, over platform.yaml (level 0):
+# the platform administrators are a group of the roles, too.
+global:
+  okdp:
+    ingress:
+      suffix: okdp.sandbox
+      className: nginx
+    tls:
+      clusterIssuer: default-issuer
+      caBundleSecret: certs-bundle
+    oidc:
+      enabled: true
+      issuerUri: https://keycloak.okdp.sandbox/realms/master
+      authUrl: https://keycloak.okdp.sandbox/realms/master/protocol/openid-connect/auth
+      tokenUrl: https://keycloak.okdp.sandbox/realms/master/protocol/openid-connect/token
+      scope: openid profile email groups
+      insecureSkipVerify: true
+      clientProvisioning: existing
+    access:
+      admins: [platform_admin]

@@ -1,8 +1,27 @@
-# The values of the airflow chart (the former KuboCD module main), computed
+# The values of the airflow chart, computed
 # from the parameters, the platform values and the connections; they see the
 # vars of okdp.yaml.
 airflow:
-  extraEnv: "${{ (oidcEnabled ? oidcEnv : '') + commonEnv }}"
+  extraEnv: "${{ (oidcEnabled ? oidcEnv : '') + (dbConnection ? dbEnv : '') + commonEnv + (caBundle != '' ? caEnv : '') }}"
+  # The platform's CA bundle (global.okdp.tls.caBundleSecret), when set, the
+  # one the caEnv variables point at, mounted in every Airflow container: a
+  # component without it fails any HTTPS call to a certificate of the
+  # platform's CA, and the CLI itself talks to the API server over HTTPS.
+  volumes:
+    - $if: ${{ caBundle != '' }}
+      name: cacerts
+      secret:
+        secretName: ${{ caBundle }}
+  volumeMounts:
+    - $if: ${{ caBundle != '' }}
+      name: cacerts
+      mountPath: /cacerts
+  # The connection string built from the db connection (extraEnv): the
+  # chart's own variables off.
+  enableBuiltInSecretEnvVars:
+    $if: ${{ dbConnection }}
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: false
+    AIRFLOW_CONN_AIRFLOW_DB: false
   apiServer:
     annotations: ${{ workloadAnnotations }}
     resources:
@@ -11,8 +30,10 @@ airflow:
     apiServerConfig:
       $if: ${{ oidcEnabled }}
       $value: |
+        import logging
         import os
 
+        from airflow.providers.fab.auth_manager.security_manager.override import FabAirflowSecurityManagerOverride
         from flask_appbuilder.security.manager import AUTH_OAUTH
 
         verify_tls = os.environ.get("INSECURE_VERIFY_TLS", "true").lower() == "true"
@@ -20,12 +41,32 @@ airflow:
 
         AUTH_TYPE = AUTH_OAUTH
         AUTH_USER_REGISTRATION = True
-        AUTH_USER_REGISTRATION_ROLE = "Viewer"
+        # What a user gets beside the roles of its groups: nothing. The realm's
+        # people are not the project's: only the members of the groups below
+        # register (OkdpSecurityManager).
+        AUTH_USER_REGISTRATION_ROLE = "Public"
         # Sync Airflow roles from OIDC groups at every login
         AUTH_ROLES_SYNC_AT_LOGIN = True
-        # Map OIDC groups to Airflow roles
+        # Map OIDC groups to Airflow roles: the project's groups and the
+        # platform's administrators by default (okdp.yaml, roleGroups)
         AUTH_ROLES_MAPPING = {${{ roleMapping.map(l, '\n    ' + l).join('') }}
         }
+
+
+        class OkdpSecurityManager(FabAirflowSecurityManagerOverride):
+            """Signs in, and registers, the members of a group of AUTH_ROLES_MAPPING only."""
+
+            def auth_user_oauth(self, userinfo, *args, **kwargs):
+                allowed = {group for group, roles in AUTH_ROLES_MAPPING.items() if roles}
+                if not allowed.intersection(userinfo.get("role_keys") or []):
+                    logging.getLogger(__name__).warning(
+                        "sign-in of %r refused: none of its groups has an Airflow role", userinfo.get("username")
+                    )
+                    return None
+                return super().auth_user_oauth(userinfo, *args, **kwargs)
+
+
+        SECURITY_MANAGER_CLASS = OkdpSecurityManager
 
         OAUTH_PROVIDERS = [
             {
@@ -56,19 +97,18 @@ airflow:
   ingress:
     apiServer:
       ingressClassName: ${{ global.okdp.ingress.className }}
-      annotations:
-        kubernetes.io/ingress.class: ${{ global.okdp.ingress.className }}
-        $merge: ${{ platform.ingressAnnotations }}
+      annotations: ${{ platform.ingressAnnotations }}
       hosts:
         - name: ${{ host }}
           tls:
             enabled: true
             secretName: ${{ release.name }}-airflow-tls
   # The pre-provisioned Secret holding the full SQLAlchemy connection
-  # string: the chart does not generate its own airflow-metadata secret, so
+  # string, else the db connection's credentials Secret (its variables off):
+  # the chart does not generate its own airflow-metadata secret, so
   # credentials never appear in the values.
   data:
-    metadataSecretName: ${{ values.metadataSecret }}
+    metadataSecretName: ${{ first([values.metadataSecret, db.?secretRef.name.orValue('')]) }}
   dags:
     gitSync:
       $for: e in gitSync

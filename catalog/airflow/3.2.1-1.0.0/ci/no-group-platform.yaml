@@ -1,0 +1,17 @@
+# The platform values of the case no-group, over platform.yaml (level 0): no administrators.
+global:
+  okdp:
+    ingress:
+      suffix: okdp.sandbox
+      className: nginx
+    tls:
+      clusterIssuer: default-issuer
+      caBundleSecret: certs-bundle
+    oidc:
+      enabled: true
+      issuerUri: https://keycloak.okdp.sandbox/realms/master
+      authUrl: https://keycloak.okdp.sandbox/realms/master/protocol/openid-connect/auth
+      tokenUrl: https://keycloak.okdp.sandbox/realms/master/protocol/openid-connect/token
+      scope: openid profile email groups
+      insecureSkipVerify: true
+      clientProvisioning: existing

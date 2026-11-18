@@ -1,0 +1,6 @@
+# error: airflow: no group may sign in
+# OIDC on, no group with a role: nobody could sign in.
+db: demo-db-airflow
+metadataSecret: demo-airflow-metadata
+storage: demo-storage
+s3SecretRef: creds-airflow-s3

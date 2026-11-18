@@ -1,0 +1,3 @@
+# No group has a role in the project (project.yaml, level 1): the platform's
+# administrators alone reach it, and the platform has none.
+access: {}

@@ -5,23 +5,32 @@
   "properties": {
     "global": {
       "type": "object",
-      "description": "Platform values: the context (platform/platform-values.yaml, global.okdp), never an instance's."
+      "description": "Platform values (global.okdp): the context's layers, the platform's (platform.yaml) then its project's (project.yaml), never an instance's."
     },
     "db": {
-      "type": "string",
+      "type": [
+        "string",
+        "object"
+      ],
       "title": "Metadata database",
-      "description": "Connection to the SQL database server hosting the Airflow metadata database.",
+      "description": "The SQL database hosting the Airflow metadata: a database of its own by default ({}, a claim of the default class of database-server connections), a claim written out ({class: <class>} or {provider: <namespace>/<instance>}), or the name of a connection, of an output of another instance of the namespace, or of a named claim of the project. Required of it: its credentials Secret (secretRef: username, password), from which the connection string is built when metadataSecret is empty.",
       "x-okdp-connection-ref": {
-        "contract": "database-server"
+        "contract": "database-server",
+        "provision": true,
+        "require": {
+          "required": [
+            "secretRef"
+          ]
+        }
       },
       "x-ui-group": "Cluster",
       "x-ui-order": 2,
-      "default": ""
+      "default": {}
     },
     "metadataSecret": {
       "type": "string",
       "title": "Metadata connection secret",
-      "description": "Secret with key connection holding the full SQLAlchemy connection string.",
+      "description": "Secret with key connection holding the full SQLAlchemy connection string. Empty: the connection string is built from the db connection, its user and password read from its credentials Secret (a URL-safe password: the providers' generated ones are).",
       "x-ui-group": "Cluster",
       "x-ui-order": 3,
       "default": ""
@@ -69,7 +78,7 @@
     "oidcRoleMapping": {
       "type": "object",
       "title": "Role mapping",
-      "description": "Map of OIDC groups to lists of Airflow roles.",
+      "description": "Map of OIDC groups to lists of Airflow roles, over the project's groups (Viewer, User or Admin by their role in project.yaml access, the platform administrators Admin). Its members sign in; nobody outside the project's groups and these does.",
       "default": {},
       "additionalProperties": {
         "type": "array",
@@ -92,11 +101,15 @@
       }
     },
     "storage": {
-      "type": "string",
+      "type": [
+        "string",
+        "object"
+      ],
       "title": "Object store",
-      "description": "Connection to the S3-compatible object store the DAGs read and write.",
+      "description": "The S3-compatible object store the DAGs read and write: the name of a connection, of an output of another instance of the namespace, or of a named claim of the project (a bucket the other services of the project claim too); or a claim, a bucket of its own ({}, {class: <class>}).",
       "x-okdp-connection-ref": {
-        "contract": "s3"
+        "contract": "s3",
+        "provision": true
       },
       "x-ui-group": "Storage",
       "x-ui-order": 5,
@@ -105,7 +118,7 @@
     "s3SecretRef": {
       "type": "string",
       "title": "S3 credentials secret",
-      "description": "Secret with keys accessKey and secretKey granting the DAGs access to the object store.",
+      "description": "Secret with keys accessKey and secretKey granting the DAGs access to the object store. Empty: the storage connection's credentials Secret (secretRef), a claimed bucket's identity.",
       "x-ui-group": "Storage",
       "x-ui-order": 6,
       "default": ""
@@ -214,9 +227,7 @@
   },
   "required": [
     "db",
-    "metadataSecret",
-    "storage",
-    "s3SecretRef"
+    "storage"
   ],
   "additionalProperties": false,
   "definitions": {

@@ -1,11 +1,11 @@
-# The platform values of the case no-connections, over platform.yaml (--context, level 0).
+# The platform values of the case no-connections, over platform.yaml (level 0).
 global:
   okdp:
     ingress:
       suffix: example.org
       className: nginx
-    certificateIssuers:
-      selfSigned:
-        name: letsencrypt
+    tls:
+      clusterIssuer: letsencrypt
+      caBundleSecret: certs-bundle
     oidc:
       enabled: false

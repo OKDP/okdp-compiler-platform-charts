@@ -1,4 +1,4 @@
-# The connections of the case oidc-endpoints: the instance's own (--context 2:).
+# The connections of the case oidc-endpoints: the instance's own (connections.yaml, level 2).
 connections:
   pg:
     contract: database-server
@@ -6,6 +6,8 @@ connections:
     host: pg.example.org
     port: 5432
     dbName: airflow
+    secretRef:
+      name: airflow-pg
   minio:
     contract: s3
     apiUrl: https://minio.example.org

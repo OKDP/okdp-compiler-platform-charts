@@ -1,0 +1,6 @@
+# OIDC on, no oidcRoleMapping: the sign-in is the project's groups' and the
+# platform's administrators' (project-groups-project.yaml).
+db: demo-db-airflow
+metadataSecret: demo-airflow-metadata
+storage: demo-storage
+s3SecretRef: creds-airflow-s3

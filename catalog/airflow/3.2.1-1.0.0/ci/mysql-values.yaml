@@ -1,0 +1,6 @@
+# A MySQL metadata database, an external connection with its credentials
+# Secret: the connection string built from it (mysql+mysqldb, no
+# metadataSecret). OIDC off.
+db: mysql
+storage: minio
+s3SecretRef: airflow-minio
